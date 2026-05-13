@@ -1,6 +1,7 @@
 // Client-side PDF text extraction using pdfjs-dist
 import * as pdfjs from "pdfjs-dist";
-// @ts-expect-error - worker import
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - vite ?url import
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 if (typeof window !== "undefined") {
