@@ -1,14 +1,16 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
+import { AppShell } from "@/components/app-shell";
 
-export const Route = createFileRoute("/")({
-  component: Index,
+export const Route = createFileRoute("/_authenticated")({
+  component: AuthGate,
 });
 
-function Index() {
+function AuthGate() {
   const { loading, user } = useAuth();
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Carregando…</div>;
   }
-  return <Navigate to={user ? "/dashboard" : "/login"} />;
+  if (!user) return <Navigate to="/login" />;
+  return <AppShell />;
 }
