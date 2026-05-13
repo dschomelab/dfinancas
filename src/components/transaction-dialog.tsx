@@ -28,6 +28,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
   const [form, setForm] = useState({
     type: "expense" as "expense" | "income",
     occurred_on: new Date().toISOString().slice(0, 10),
+    competence: new Date().toISOString().slice(0, 7),
     description: "",
     source: "",
     amount: "",
@@ -39,9 +40,11 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
 
   useEffect(() => {
     if (open) {
+      const occ = initial?.occurred_on ?? new Date().toISOString().slice(0, 10);
       setForm({
         type: (initial?.type as "expense" | "income") ?? "expense",
-        occurred_on: initial?.occurred_on ?? new Date().toISOString().slice(0, 10),
+        occurred_on: occ,
+        competence: initial?.competence ?? competenceFromDate(occ),
         description: initial?.description ?? "",
         source: initial?.source ?? "",
         amount: initial?.amount?.toString() ?? "",
@@ -58,15 +61,15 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
   const submit = async () => {
     if (!user) return;
     const amount = parseFloat(form.amount.replace(",", "."));
-    if (!form.description || !form.occurred_on || isNaN(amount)) {
-      return toast.error("Preencha descrição, data e valor.");
+    if (!form.description || !form.occurred_on || !form.competence || isNaN(amount)) {
+      return toast.error("Preencha descrição, data, competência e valor.");
     }
     setBusy(true);
     const payload = {
       user_id: user.id,
       type: form.type,
       occurred_on: form.occurred_on,
-      competence: competenceFromDate(form.occurred_on),
+      competence: form.competence,
       description: form.description,
       source: form.source || null,
       amount,
@@ -104,9 +107,14 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Data</Label>
-              <Input type="date" value={form.occurred_on} onChange={(e) => setForm({ ...form, occurred_on: e.target.value })} />
+              <Label>Data do lançamento</Label>
+              <Input type="date" value={form.occurred_on} onChange={(e) => setForm({ ...form, occurred_on: e.target.value, competence: form.competence || competenceFromDate(e.target.value) })} />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Competência (mês de referência)</Label>
+            <Input type="month" value={form.competence} onChange={(e) => setForm({ ...form, competence: e.target.value })} />
+            <p className="text-xs text-muted-foreground">Sempre tratada como dia 01 do mês selecionado. Usada nos fechamentos e filtros.</p>
           </div>
           <div className="space-y-1.5">
             <Label>Descrição</Label>
