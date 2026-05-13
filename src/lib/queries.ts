@@ -64,7 +64,11 @@ export function useTransactions(filters: { competence?: string; type?: "expense"
     queryKey: ["transactions", user?.id, filters],
     enabled: !!user,
     queryFn: async (): Promise<Transaction[]> => {
-      let q = supabase.from("transactions").select("*").order("occurred_on", { ascending: false });
+      let q = supabase
+        .from("transactions")
+        .select("*")
+        .order("competence", { ascending: false })
+        .order("occurred_on", { ascending: false });
       if (filters.competence) q = q.eq("competence", filters.competence);
       if (filters.type && filters.type !== "all") q = q.eq("type", filters.type);
       if (filters.categoryId && filters.categoryId !== "all") q = q.eq("category_id", filters.categoryId);

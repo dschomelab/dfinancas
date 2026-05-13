@@ -15,6 +15,19 @@ export const fmtCompetence = (yyyymm: string) => {
   return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 };
 
+// Competência sempre tratada como o 1º dia do mês: "01/MM/AAAA"
+export const fmtCompetenceDate = (yyyymm: string) => {
+  if (!yyyymm) return "";
+  const [y, m] = yyyymm.split("-");
+  return `01/${m}/${y}`;
+};
+
+// Normaliza qualquer data ISO/competência para "YYYY-MM"
+export const normalizeCompetence = (raw: string) => {
+  if (!raw) return "";
+  return raw.slice(0, 7);
+};
+
 // Parse number strings like "1.234,56" or "1234.56" or "R$ 1.234,56"
 export function parseAmount(raw: string | number | undefined | null): number | null {
   if (raw === null || raw === undefined) return null;
