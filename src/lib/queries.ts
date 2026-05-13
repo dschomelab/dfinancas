@@ -9,6 +9,7 @@ export type Category = {
   type: "expense" | "income";
   color: string;
   icon: string;
+  parent: string | null;
 };
 
 export type Group = {
