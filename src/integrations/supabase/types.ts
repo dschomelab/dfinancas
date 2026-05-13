@@ -21,6 +21,7 @@ export type Database = {
           icon: string
           id: string
           name: string
+          parent: string | null
           type: string
           user_id: string
         }
@@ -30,6 +31,7 @@ export type Database = {
           icon?: string
           id?: string
           name: string
+          parent?: string | null
           type: string
           user_id: string
         }
@@ -39,6 +41,7 @@ export type Database = {
           icon?: string
           id?: string
           name?: string
+          parent?: string | null
           type?: string
           user_id?: string
         }
@@ -242,6 +245,10 @@ export type Database = {
       is_group_member: {
         Args: { _group_id: string; _user_id: string }
         Returns: boolean
+      }
+      seed_default_categories: {
+        Args: { _user_id: string }
+        Returns: undefined
       }
     }
     Enums: {

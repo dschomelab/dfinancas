@@ -1,0 +1,1 @@
+grant execute on function public.is_group_member(uuid, uuid) to authenticated;
