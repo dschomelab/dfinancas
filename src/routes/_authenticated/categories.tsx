@@ -32,6 +32,7 @@ function CategoriesPage() {
     if (error) return toast.error(error.message);
     toast.success("Categoria criada");
     setName("");
+    setParent("");
     qc.invalidateQueries({ queryKey: ["categories"] });
   };
 
@@ -42,20 +43,29 @@ function CategoriesPage() {
     qc.invalidateQueries({ queryKey: ["categories"] });
   };
 
-  const grouped = {
-    expense: (cats.data ?? []).filter((c) => c.type === "expense"),
-    income: (cats.data ?? []).filter((c) => c.type === "income"),
+  const groupByParent = (list: typeof cats.data extends infer T ? T : never) => {
+    const map = new Map<string, typeof cats.data>();
+    (list ?? []).forEach((c: any) => {
+      const k = c.parent || "Sem grupo";
+      if (!map.has(k)) map.set(k, [] as any);
+      (map.get(k) as any).push(c);
+    });
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, "pt"));
   };
 
+  const expenses = (cats.data ?? []).filter((c) => c.type === "expense");
+  const incomes = (cats.data ?? []).filter((c) => c.type === "income");
+  const parentSuggestions = Array.from(new Set((cats.data ?? []).map((c: any) => c.parent).filter(Boolean))) as string[];
+
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="font-display text-3xl font-semibold">Categorias</h1>
-        <p className="text-sm text-muted-foreground">Crie categorias para organizar despesas e receitas.</p>
+        <p className="text-sm text-muted-foreground">Organize por grupo (ex: Alimentação, Habitação) e subcategoria.</p>
       </div>
 
       <Card className="p-5">
-        <form onSubmit={submit} className="grid md:grid-cols-4 gap-3 items-end">
+        <form onSubmit={submit} className="grid md:grid-cols-5 gap-3 items-end">
           <div className="space-y-1.5">
             <Label>Tipo</Label>
             <Select value={type} onValueChange={(v) => setType(v as "expense" | "income")}>
@@ -67,8 +77,15 @@ function CategoriesPage() {
             </Select>
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Nome</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Alimentação" />
+            <Label>Grupo</Label>
+            <Input list="parent-options" value={parent} onChange={(e) => setParent(e.target.value)} placeholder="Ex: Habitação" />
+            <datalist id="parent-options">
+              {parentSuggestions.map((p) => <option key={p} value={p} />)}
+            </datalist>
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Subcategoria</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aluguel" />
           </div>
           <div className="space-y-1.5">
             <Label>Cor</Label>
@@ -79,18 +96,25 @@ function CategoriesPage() {
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {(["expense", "income"] as const).map((t) => (
+        {([["expense", "Despesas", expenses], ["income", "Receitas", incomes]] as const).map(([t, label, list]) => (
           <Card key={t} className="p-5">
-            <h2 className="font-display font-semibold mb-3">{t === "expense" ? "Despesas" : "Receitas"}</h2>
-            <div className="space-y-2">
-              {grouped[t].length === 0 && <p className="text-sm text-muted-foreground">Nenhuma categoria.</p>}
-              {grouped[t].map((c) => (
-                <div key={c.id} className="flex items-center justify-between p-2 rounded-md border">
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full" style={{ background: c.color }} />
-                    <span>{c.name}</span>
+            <h2 className="font-display font-semibold mb-3">{label}</h2>
+            <div className="space-y-4">
+              {list.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma categoria.</p>}
+              {groupByParent(list).map(([group, items]) => (
+                <div key={group}>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1.5">{group}</div>
+                  <div className="space-y-1.5">
+                    {(items as any[]).map((c) => (
+                      <div key={c.id} className="flex items-center justify-between p-2 rounded-md border">
+                        <div className="flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-full" style={{ background: c.color }} />
+                          <span>{c.name}</span>
+                        </div>
+                        <Button size="icon" variant="ghost" onClick={() => remove(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </div>
+                    ))}
                   </div>
-                  <Button size="icon" variant="ghost" onClick={() => remove(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                 </div>
               ))}
             </div>
