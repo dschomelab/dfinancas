@@ -22,12 +22,13 @@ function CategoriesPage() {
   const qc = useQueryClient();
   const [type, setType] = useState<"expense" | "income">("expense");
   const [name, setName] = useState("");
+  const [parent, setParent] = useState("");
   const [color, setColor] = useState("#3b6fa0");
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user || !name.trim()) return;
-    const { error } = await supabase.from("categories").insert({ user_id: user.id, name: name.trim(), type, color });
+    const { error } = await supabase.from("categories").insert({ user_id: user.id, name: name.trim(), type, color, parent: parent.trim() || null });
     if (error) return toast.error(error.message);
     toast.success("Categoria criada");
     setName("");
