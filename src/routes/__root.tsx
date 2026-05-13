@@ -60,8 +60,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Finança · Controle financeiro pessoal" },
+      { title: "Finança · Controle financeiro" },
       { name: "description", content: "Controle de despesas e receitas com importação automática de CSV e PDF, categorias, competências e compartilhamento entre usuários." },
+      { property: "og:title", content: "Finança · Controle financeiro" },
+      { name: "twitter:title", content: "Finança · Controle financeiro" },
+      { property: "og:description", content: "Controle de despesas e receitas com importação automática de CSV e PDF, categorias, competências e compartilhamento entre usuários." },
+      { name: "twitter:description", content: "Controle de despesas e receitas com importação automática de CSV e PDF, categorias, competências e compartilhamento entre usuários." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/aca2b604-6161-454f-8ef5-4b85b0d335ee/id-preview-1a86b5a0--c0006d03-76cf-44d7-9eda-ae9e847939d3.lovable.app-1778698188876.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/aca2b604-6161-454f-8ef5-4b85b0d335ee/id-preview-1a86b5a0--c0006d03-76cf-44d7-9eda-ae9e847939d3.lovable.app-1778698188876.png" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:type", content: "website" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
