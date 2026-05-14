@@ -73,6 +73,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
       occurred_on: form.occurred_on,
       competence: form.competence,
       description: form.description,
+      grouped_description: form.grouped_description?.trim() || null,
       source: form.source || null,
       amount,
       category_id: form.category_id || null,
