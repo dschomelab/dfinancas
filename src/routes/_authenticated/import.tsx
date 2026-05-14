@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCategories, useGroups } from "@/lib/queries";
 import { useAuth } from "@/lib/auth-context";
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/_authenticated/import")({
   component: ImportPage,
 });
 
-type Row = ParsedRow & { category_id?: string | null };
+type Row = ParsedRow & { category_id?: string | null; grouped_description?: string; is_shared?: boolean };
 
 function ImportPage() {
   const { user } = useAuth();
@@ -31,7 +32,8 @@ function ImportPage() {
   const aiExtract = useServerFn(extractTransactionsFromText);
 
   const [defaultType, setDefaultType] = useState<"expense" | "income">("expense");
-  const [groupId, setGroupId] = useState<string>("none");
+  const [competence, setCompetence] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [sharedGroupId, setSharedGroupId] = useState<string>("none");
   const [source, setSource] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,7 @@ function ImportPage() {
       if (file.name.toLowerCase().endsWith(".csv")) {
         const text = await file.text();
         const parsed = parseCsvText(text, defaultType, source || inferred);
-        setRows(parsed.rows.map((r) => ({ ...r, category_id: null })));
+        setRows(parsed.rows.map((r) => ({ ...r, competence, category_id: null, grouped_description: "", is_shared: false })));
         toast.success(`${parsed.rows.length} lançamentos lidos do CSV`);
         if (parsed.errors.length) console.warn(parsed.errors);
       } else if (file.name.toLowerCase().endsWith(".pdf")) {
@@ -58,9 +60,11 @@ function ImportPage() {
           description: r.description,
           source: r.source ?? source ?? inferred,
           amount: Math.abs(Number(r.amount)),
-          competence: competenceFromDate(r.occurred_on),
+          competence,
           type: r.type,
           category_id: null,
+          grouped_description: "",
+          is_shared: false,
         }));
         setRows(mapped);
         toast.success(`${mapped.length} lançamentos extraídos pela IA`);
@@ -79,11 +83,6 @@ function ImportPage() {
       rs.map((r, idx) => {
         if (idx !== i) return r;
         const next = { ...r, ...patch };
-        // Se mudou a data e a competência ainda não foi tocada manualmente, sincroniza
-        if (patch.occurred_on && !patch.competence) {
-          next.competence = competenceFromDate(patch.occurred_on);
-        }
-        // Se mudou o tipo, limpa categoria (categorias são por tipo)
         if (patch.type && patch.type !== r.type) next.category_id = null;
         return next;
       }),
@@ -94,18 +93,20 @@ function ImportPage() {
 
   const confirm = async () => {
     if (!user || rows.length === 0) return;
+    if (!competence) return toast.error("Defina a competência da importação.");
     setBusy(true);
     const payload = rows.map((r) => ({
       user_id: user.id,
       type: r.type,
       occurred_on: r.occurred_on,
-      competence: r.competence,
+      competence,
       description: r.description,
-      source: r.source ?? null,
+      grouped_description: r.grouped_description?.trim() || null,
+      source: source?.trim() || r.source || null,
       amount: r.amount,
       category_id: r.category_id || null,
-      group_id: groupId === "none" ? null : groupId,
-      is_shared: groupId !== "none",
+      group_id: r.is_shared && sharedGroupId !== "none" ? sharedGroupId : null,
+      is_shared: !!r.is_shared,
     }));
     const { error } = await supabase.from("transactions").insert(payload);
     setBusy(false);
@@ -116,17 +117,17 @@ function ImportPage() {
     setFilename("");
   };
 
-  const allCats = cats.data ?? [];
+  const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="font-display text-3xl font-semibold">Importar arquivo</h1>
-        <p className="text-sm text-muted-foreground">CSV é lido localmente. PDF é interpretado por IA. Edite categoria e competência linha a linha antes de confirmar.</p>
+        <p className="text-sm text-muted-foreground">CSV é lido localmente. PDF é interpretado por IA. Defina competência, origem e grupo padrão; marque a coluna "Compartilhado" linha a linha.</p>
       </div>
 
       <Card className="p-6">
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-4 gap-4">
           <div className="space-y-1.5">
             <Label>Tipo padrão</Label>
             <Select value={defaultType} onValueChange={(v) => setDefaultType(v as "expense" | "income")}>
@@ -138,18 +139,22 @@ function ImportPage() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Grupo (opcional)</Label>
-            <Select value={groupId} onValueChange={setGroupId}>
-              <SelectTrigger><SelectValue placeholder="Pessoal" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pessoal</SelectItem>
-                {(groups.data ?? []).map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label>Competência</Label>
+            <Input type="month" value={competence} onChange={(e) => setCompetence(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Origem (banco/cartão)</Label>
             <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Detectado do nome" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Grupo p/ compartilhados</Label>
+            <Select value={sharedGroupId} onValueChange={setSharedGroupId}>
+              <SelectTrigger><SelectValue placeholder="Pessoal" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sem grupo</SelectItem>
+                {(groups.data ?? []).map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -181,11 +186,11 @@ function ImportPage() {
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="text-left p-2">Data</th>
-                  <th className="text-left p-2">Competência</th>
                   <th className="text-left p-2">Descrição</th>
+                  <th className="text-left p-2">Descrição agrupada</th>
                   <th className="text-left p-2">Tipo</th>
                   <th className="text-left p-2">Categoria</th>
-                  <th className="text-left p-2">Origem</th>
+                  <th className="text-center p-2">Compart.</th>
                   <th className="text-right p-2">Valor</th>
                   <th className="p-2"></th>
                 </tr>
@@ -196,8 +201,8 @@ function ImportPage() {
                   return (
                     <tr key={i} className="border-t align-top">
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
-                      <td className="p-2"><Input type="month" value={r.competence} onChange={(e) => updateRow(i, { competence: e.target.value })} className="h-8 w-32" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-48" /></td>
+                      <td className="p-2"><Input value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
                       <td className="p-2">
                         <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
                           <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
@@ -216,7 +221,9 @@ function ImportPage() {
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="p-2"><Input value={r.source ?? ""} onChange={(e) => updateRow(i, { source: e.target.value })} className="h-8 w-32" /></td>
+                      <td className="p-2 text-center">
+                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(i, { is_shared: !!v })} />
+                      </td>
                       <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(i, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
                       <td className="p-2 text-right">
                         <Button size="icon" variant="ghost" onClick={() => remove(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
