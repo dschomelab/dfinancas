@@ -30,6 +30,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
     occurred_on: new Date().toISOString().slice(0, 10),
     competence: new Date().toISOString().slice(0, 7),
     description: "",
+    grouped_description: "",
     source: "",
     amount: "",
     category_id: "",
@@ -46,6 +47,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
         occurred_on: occ,
         competence: initial?.competence ?? competenceFromDate(occ),
         description: initial?.description ?? "",
+        grouped_description: initial?.grouped_description ?? "",
         source: initial?.source ?? "",
         amount: initial?.amount?.toString() ?? "",
         category_id: initial?.category_id ?? "",
@@ -56,7 +58,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
     }
   }, [open, initial]);
 
-  const filteredCats = (cats.data ?? []).filter((c) => c.type === form.type);
+  const filteredCats = (cats.data ?? []).filter((c) => c.type === form.type).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   const submit = async () => {
     if (!user) return;
