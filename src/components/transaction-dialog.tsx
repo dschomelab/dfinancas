@@ -123,6 +123,10 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
             <Label>Descrição</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
+          <div className="space-y-1.5">
+            <Label>Descrição agrupada</Label>
+            <Input value={form.grouped_description} onChange={(e) => setForm({ ...form, grouped_description: e.target.value })} placeholder="Resumo objetivo (ex.: Mercado mensal)" />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Valor (R$)</Label>
