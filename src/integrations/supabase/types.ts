@@ -176,6 +176,7 @@ export type Database = {
           created_at: string
           description: string
           group_id: string | null
+          grouped_description: string | null
           id: string
           import_id: string | null
           is_shared: boolean
@@ -193,6 +194,7 @@ export type Database = {
           created_at?: string
           description: string
           group_id?: string | null
+          grouped_description?: string | null
           id?: string
           import_id?: string | null
           is_shared?: boolean
@@ -210,6 +212,7 @@ export type Database = {
           created_at?: string
           description?: string
           group_id?: string | null
+          grouped_description?: string | null
           id?: string
           import_id?: string | null
           is_shared?: boolean
