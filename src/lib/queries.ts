@@ -60,7 +60,16 @@ export function useGroups() {
   });
 }
 
-export function useTransactions(filters: { competence?: string; type?: "expense" | "income" | "all"; categoryId?: string | "all"; groupId?: string | "all" }) {
+export type TxFilters = {
+  competence?: string;
+  competences?: string[];
+  type?: "expense" | "income" | "all";
+  categoryId?: string | "all";
+  groupId?: string | "all";
+  shared?: "all" | "shared" | "personal";
+};
+
+export function useTransactions(filters: TxFilters) {
   const { user } = useAuth();
   return useQuery({
     queryKey: ["transactions", user?.id, filters],
@@ -72,12 +81,30 @@ export function useTransactions(filters: { competence?: string; type?: "expense"
         .order("competence", { ascending: false })
         .order("occurred_on", { ascending: false });
       if (filters.competence) q = q.eq("competence", filters.competence);
+      if (filters.competences && filters.competences.length > 0) q = q.in("competence", filters.competences);
       if (filters.type && filters.type !== "all") q = q.eq("type", filters.type);
       if (filters.categoryId && filters.categoryId !== "all") q = q.eq("category_id", filters.categoryId);
       if (filters.groupId && filters.groupId !== "all") q = q.eq("group_id", filters.groupId);
+      if (filters.shared === "shared") q = q.eq("is_shared", true);
+      if (filters.shared === "personal") q = q.eq("is_shared", false);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as Transaction[];
+    },
+  });
+}
+
+export type Profile = { id: string; display_name: string; email: string | null };
+
+export function useProfiles() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["profiles", user?.id],
+    enabled: !!user,
+    queryFn: async (): Promise<Profile[]> => {
+      const { data, error } = await supabase.from("profiles").select("id, display_name, email");
+      if (error) throw error;
+      return (data ?? []) as Profile[];
     },
   });
 }
