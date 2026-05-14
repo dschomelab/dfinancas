@@ -5,6 +5,7 @@ import { fmtMoney, fmtDate, fmtCompetence } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { TransactionDialog } from "@/components/transaction-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +33,18 @@ function TransactionsPage() {
   const [type, setType] = useState<"all" | "expense" | "income">("all");
   const [catFilter, setCatFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [sharedFilter, setSharedFilter] = useState<"all" | "shared" | "personal">("all");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const cats = useCategories();
   const groups = useGroups();
-  const tx = useTransactions({ competence: comp, type, categoryId: catFilter, groupId: groupFilter });
+  const tx = useTransactions({ competence: comp, type, categoryId: catFilter, groupId: groupFilter, shared: sharedFilter });
   const qc = useQueryClient();
+
+  const sortedCats = useMemo(
+    () => (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [cats.data],
+  );
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este lançamento?")) return;
@@ -47,19 +54,25 @@ function TransactionsPage() {
     qc.invalidateQueries({ queryKey: ["transactions"] });
   };
 
+  const toggleShared = async (t: Transaction, value: boolean) => {
+    const { error } = await supabase.from("transactions").update({ is_shared: value }).eq("id", t.id);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["transactions"] });
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-semibold">Lançamentos</h1>
-          <p className="text-sm text-muted-foreground">Filtre por competência, tipo, categoria ou grupo.</p>
+          <p className="text-sm text-muted-foreground">Filtre por competência, tipo, categoria, grupo ou compartilhamento.</p>
         </div>
         <Button onClick={() => { setEditing(null); setOpen(true); }}>
           <Plus className="h-4 w-4 mr-1" /> Novo
         </Button>
       </div>
 
-      <Card className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <Card className="p-4 grid grid-cols-2 md:grid-cols-5 gap-3">
         <Select value={comp} onValueChange={setComp}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -78,7 +91,7 @@ function TransactionsPage() {
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as categorias</SelectItem>
-            {(cats.data ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            {sortedCats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={groupFilter} onValueChange={setGroupFilter}>
@@ -86,6 +99,14 @@ function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">Todos os grupos</SelectItem>
             {(groups.data ?? []).map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={sharedFilter} onValueChange={(v) => setSharedFilter(v as "all" | "shared" | "personal")}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Compart. + pessoais</SelectItem>
+            <SelectItem value="shared">Apenas compartilhados</SelectItem>
+            <SelectItem value="personal">Apenas pessoais</SelectItem>
           </SelectContent>
         </Select>
       </Card>
@@ -97,27 +118,32 @@ function TransactionsPage() {
               <tr>
                 <th className="text-left p-3">Data</th>
                 <th className="text-left p-3">Descrição</th>
+                <th className="text-left p-3">Descrição agrupada</th>
                 <th className="text-left p-3">Categoria</th>
                 <th className="text-left p-3">Origem</th>
+                <th className="text-center p-3">Compart.</th>
                 <th className="text-right p-3">Valor</th>
                 <th className="p-3"></th>
               </tr>
             </thead>
             <tbody>
               {(tx.data ?? []).map((t) => {
-                const cat = cats.data?.find((c) => c.id === t.category_id);
+                const cat = sortedCats.find((c) => c.id === t.category_id);
                 return (
                   <tr key={t.id} className="border-t hover:bg-muted/30">
                     <td className="p-3 whitespace-nowrap">{fmtDate(t.occurred_on)}</td>
                     <td className="p-3">
                       <div className="font-medium">{t.description}</div>
                       <div className="flex gap-1 mt-1">
-                        {t.is_shared && <Badge variant="secondary" className="text-[10px]">Compartilhada</Badge>}
                         {t.group_id && <Badge variant="outline" className="text-[10px]">{groups.data?.find((g) => g.id === t.group_id)?.name}</Badge>}
                       </div>
                     </td>
+                    <td className="p-3 text-muted-foreground">{t.grouped_description ?? <span className="text-muted-foreground/60">—</span>}</td>
                     <td className="p-3">{cat?.name ?? <span className="text-muted-foreground">—</span>}</td>
                     <td className="p-3 text-muted-foreground">{t.source ?? "—"}</td>
+                    <td className="p-3 text-center">
+                      <Checkbox checked={t.is_shared} onCheckedChange={(v) => toggleShared(t, !!v)} />
+                    </td>
                     <td className={`p-3 text-right font-medium ${t.type === "expense" ? "text-destructive" : "text-success"}`}>
                       {t.type === "expense" ? "-" : "+"}{fmtMoney(Number(t.amount))}
                     </td>
@@ -133,7 +159,7 @@ function TransactionsPage() {
                 );
               })}
               {(tx.data ?? []).length === 0 && (
-                <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Nenhum lançamento neste filtro.</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Nenhum lançamento neste filtro.</td></tr>
               )}
             </tbody>
           </table>
