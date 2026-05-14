@@ -26,6 +26,7 @@ export type Transaction = {
   occurred_on: string;
   competence: string;
   description: string;
+  grouped_description: string | null;
   source: string | null;
   amount: number;
   category_id: string | null;
