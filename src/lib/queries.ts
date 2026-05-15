@@ -32,6 +32,7 @@ export type Transaction = {
   category_id: string | null;
   is_shared: boolean;
   notes: string | null;
+  attributed_to: string | null;
 };
 
 export function useCategories() {
