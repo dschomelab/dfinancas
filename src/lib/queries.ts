@@ -21,6 +21,7 @@ export type Group = {
 export type Transaction = {
   id: string;
   user_id: string;
+  attributed_to_user_id: string | null;
   group_id: string | null;
   type: "expense" | "income";
   occurred_on: string;
@@ -68,6 +69,7 @@ export type TxFilters = {
   categoryId?: string | "all";
   groupId?: string | "all";
   shared?: "all" | "shared" | "personal";
+  attributedToUserId?: string | "all";
 };
 
 export function useTransactions(filters: TxFilters) {
@@ -88,6 +90,7 @@ export function useTransactions(filters: TxFilters) {
       if (filters.groupId && filters.groupId !== "all") q = q.eq("group_id", filters.groupId);
       if (filters.shared === "shared") q = q.eq("is_shared", true);
       if (filters.shared === "personal") q = q.eq("is_shared", false);
+      if (filters.attributedToUserId && filters.attributedToUserId !== "all") q = q.eq("attributed_to_user_id", filters.attributedToUserId);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as Transaction[];

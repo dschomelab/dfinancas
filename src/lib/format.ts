@@ -12,7 +12,9 @@ export const competenceFromDate = (iso: string) => iso.slice(0, 7);
 export const fmtCompetence = (yyyymm: string) => {
   const [y, m] = yyyymm.split("-");
   const d = new Date(Number(y), Number(m) - 1, 1);
-  return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const short = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+  const cap = short.charAt(0).toUpperCase() + short.slice(1, 3);
+  return `${cap}/${d.getFullYear()}`;
 };
 
 // Competência sempre tratada como o 1º dia do mês: "01/MM/AAAA"

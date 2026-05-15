@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCategories, useGroups, useTransactionHistory, type HistoryEntry } from "@/lib/queries";
+import { useCategories, useGroups, useProfiles, useTransactionHistory, type HistoryEntry } from "@/lib/queries";
 import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { extractTransactionsFromText } from "@/lib/ai-import.functions";
@@ -51,6 +51,7 @@ function MonthlyImport() {
   const { user } = useAuth();
   const cats = useCategories();
   const groups = useGroups();
+  const profiles = useProfiles();
   const qc = useQueryClient();
   const aiExtract = useServerFn(extractTransactionsFromText);
   const history = useTransactionHistory();
@@ -60,6 +61,8 @@ function MonthlyImport() {
   const [sharedGroupId, setSharedGroupId] = useState<string>("none");
   const [source, setSource] = useState("");
   const [rows, setRows] = useState<MonthlyRow[]>([]);
+  const [subcategoryDrafts, setSubcategoryDrafts] = useState<Record<number, string>>({});
+  const [filters, setFilters] = useState({ date: "", description: "", grouped: "", type: "all", category: "", subcategory: "", shared: "all" as "all" | "yes" | "no" });
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
 
@@ -119,7 +122,7 @@ function MonthlyImport() {
           occurred_on: r.occurred_on,
           description: r.description,
           source: r.source ?? source ?? inferred,
-          amount: Math.abs(Number(r.amount)),
+          amount: Number(r.amount),
           competence,
           type: r.type,
           category_id: null,
@@ -160,6 +163,7 @@ function MonthlyImport() {
     setBusy(true);
     const payload = rows.map((r) => ({
       user_id: user.id,
+      attributed_to: profiles.data?.find((p) => p.id === user.id)?.display_name ?? user.email ?? null,
       type: r.type,
       occurred_on: r.occurred_on,
       competence,
@@ -181,6 +185,27 @@ function MonthlyImport() {
   };
 
   const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const monthlyFilteredRows = rows.map((r, idx) => ({ r, idx })).filter(({ r }) => {
+    const rowCats = allCats.filter((c) => c.type === r.type);
+    const selectedCat = rowCats.find((c) => c.id === r.category_id);
+    const category = (selectedCat?.parent ?? "").toLowerCase();
+    const subcategory = (selectedCat?.name ?? "").toLowerCase();
+    const isBlankFilter = (v: string) => v.trim().toLowerCase() === ":vazio";
+    const matchFilter = (value: string, filterValue: string) => {
+      if (!filterValue) return true;
+      if (isBlankFilter(filterValue)) return !value.trim();
+      return value.toLowerCase().includes(filterValue.toLowerCase());
+    };
+    return (
+      (!filters.date || r.occurred_on.includes(filters.date)) &&
+      matchFilter(r.description, filters.description) &&
+      matchFilter(r.grouped_description ?? "", filters.grouped) &&
+      (filters.type === "all" || r.type === filters.type) &&
+      matchFilter(category, filters.category) &&
+      matchFilter(subcategory, filters.subcategory) &&
+      (filters.shared === "all" || (filters.shared === "yes" ? !!r.is_shared : !r.is_shared))
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -242,30 +267,43 @@ function MonthlyImport() {
             </div>
             <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
           </div>
-          <div className="overflow-x-auto border-t">
+          <div className="overflow-auto border-t max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
+              <thead className="bg-white text-muted-foreground sticky top-0 z-20">
                 <tr>
                   <th className="text-left p-2">Data</th>
                   <th className="text-left p-2">Descrição</th>
                   <th className="text-left p-2">Descrição agrupada</th>
                   <th className="text-left p-2">Tipo</th>
                   <th className="text-left p-2">Categoria</th>
+                  <th className="text-left p-2">Subcategoria</th>
                   <th className="text-center p-2">Compart.</th>
                   <th className="text-right p-2">Valor</th>
                   <th className="p-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
+                <tr className="border-t bg-white sticky top-[41px] z-10">
+                  <td className="p-2"><Input type="date" value={filters.date} onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))} className="h-8 w-36" /></td>
+                  <td className="p-2"><Input value={filters.description} onChange={(e) => setFilters((f) => ({ ...f, description: e.target.value }))} className="h-8 min-w-48" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.grouped} onChange={(e) => setFilters((f) => ({ ...f, grouped: e.target.value }))} className="h-8 min-w-40" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Select value={filters.type} onValueChange={(v) => setFilters((f) => ({ ...f, type: v }))}><SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="expense">Despesa</SelectItem><SelectItem value="income">Receita</SelectItem></SelectContent></Select></td>
+                  <td className="p-2"><Input value={filters.category} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))} className="h-8 min-w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.subcategory} onChange={(e) => setFilters((f) => ({ ...f, subcategory: e.target.value }))} className="h-8 min-w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Select value={filters.shared} onValueChange={(v) => setFilters((f) => ({ ...f, shared: v as "all" | "yes" | "no" }))}><SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="yes">Sim</SelectItem><SelectItem value="no">Não</SelectItem></SelectContent></Select></td>
+                  <td></td><td></td>
+                </tr>
+                {monthlyFilteredRows.map(({ r, idx }) => {
                   const rowCats = allCats.filter((c) => c.type === r.type);
+                  const selectedCat = rowCats.find((c) => c.id === r.category_id);
+                  const subcategoryValue = subcategoryDrafts[idx] ?? selectedCat?.name ?? "";
                   return (
-                    <tr key={i} className="border-t align-top">
-                      <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
-                      <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-48" /></td>
-                      <td className="p-2"><Input list="grouped-suggestions" value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
+                    <tr key={idx} className="border-t align-top">
+                      <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(idx, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
+                      <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(idx, { description: e.target.value })} className="h-8 min-w-48" /></td>
+                      <td className="p-2"><Input list="grouped-suggestions" value={r.grouped_description ?? ""} onChange={(e) => updateRow(idx, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
                       <td className="p-2">
-                        <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
+                        <Select value={r.type} onValueChange={(v) => updateRow(idx, { type: v as "expense" | "income" })}>
                           <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="expense">Despesa</SelectItem>
@@ -273,21 +311,38 @@ function MonthlyImport() {
                           </SelectContent>
                         </Select>
                       </td>
+                      <td className="p-2 text-muted-foreground min-w-32">
+                        {selectedCat?.parent ?? "—"}
+                      </td>
                       <td className="p-2">
-                        <Select value={r.category_id ?? "none"} onValueChange={(v) => updateRow(i, { category_id: v === "none" ? null : v })}>
-                          <SelectTrigger className="h-8 w-44"><SelectValue placeholder="Sem categoria" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sem categoria</SelectItem>
-                            {rowCats.map((c) => <SelectItem key={c.id} value={c.id}>{c.parent ? `${c.parent} · ${c.name}` : c.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <Input
+                          list={`monthly-subcategory-${idx}`}
+                          value={subcategoryValue}
+                          onChange={(e) => {
+                            setSubcategoryDrafts((s) => ({ ...s, [idx]: e.target.value }));
+                            const match = rowCats.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                            if (match) updateRow(idx, { category_id: match.id });
+                          }}
+                          onBlur={(e) => {
+                            const match = rowCats.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                            if (!match) {
+                              updateRow(idx, { category_id: null });
+                              setSubcategoryDrafts((s) => ({ ...s, [idx]: "" }));
+                            }
+                          }}
+                          className="h-8 w-44"
+                          placeholder="Digite subcategoria"
+                        />
+                        <datalist id={`monthly-subcategory-${idx}`}>
+                          {rowCats.map((c) => <option key={c.id} value={c.name} />)}
+                        </datalist>
                       </td>
                       <td className="p-2 text-center">
-                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(i, { is_shared: !!v })} />
+                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(idx, { is_shared: !!v })} />
                       </td>
-                      <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(i, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
+                      <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(idx, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
                       <td className="p-2 text-right">
-                        <Button size="icon" variant="ghost" onClick={() => remove(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <Button size="icon" variant="ghost" onClick={() => remove(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </td>
                     </tr>
                   );
@@ -295,7 +350,7 @@ function MonthlyImport() {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-muted/30">
-                  <td className="p-2 font-medium" colSpan={6}>Totais</td>
+                  <td className="p-2 font-medium" colSpan={7}>Totais</td>
                   <td className="p-2 text-right font-medium">{fmtMoney(rows.reduce((a, b) => a + b.amount, 0))}</td>
                   <td></td>
                 </tr>
@@ -357,13 +412,49 @@ function HistoricalImport() {
   const { user } = useAuth();
   const cats = useCategories();
   const groups = useGroups();
+  const profiles = useProfiles();
   const qc = useQueryClient();
   const [rows, setRows] = useState<HistRow[]>([]);
+  const [subcategoryDrafts, setSubcategoryDrafts] = useState<Record<number, string>>({});
+  const [filters, setFilters] = useState({ date: "", competence: "", description: "", grouped: "", type: "all", category: "", subcategory: "", source: "", group: "", shared: "all" as "all" | "yes" | "no", user: "" });
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
 
   const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   const allGroups = groups.data ?? [];
+  const allProfiles = profiles.data ?? [];
+  const historicalFilteredRows = rows.map((r, idx) => ({ r, idx })).filter(({ r }) => {
+    const rowCats = allCats.filter((c) => c.type === r.type);
+    const selectedCat = rowCats.find((c) => c.id === r.category_id);
+    const category = (selectedCat?.parent ?? "").toLowerCase();
+    const subcategory = (selectedCat?.name ?? "").toLowerCase();
+    const groupName = (allGroups.find((g) => g.id === r.group_id)?.name ?? "").toLowerCase();
+    const isBlankFilter = (v: string) => v.trim().toLowerCase() === ":vazio";
+    const matchFilter = (value: string, filterValue: string) => {
+      if (!filterValue) return true;
+      if (isBlankFilter(filterValue)) return !value.trim();
+      return value.toLowerCase().includes(filterValue.toLowerCase());
+    };
+    return (
+      (!filters.date || r.occurred_on.includes(filters.date)) &&
+      matchFilter(r.competence, filters.competence) &&
+      matchFilter(r.description, filters.description) &&
+      matchFilter(r.grouped_description, filters.grouped) &&
+      (filters.type === "all" || r.type === filters.type) &&
+      matchFilter(category, filters.category) &&
+      matchFilter(subcategory, filters.subcategory) &&
+      matchFilter(r.source, filters.source) &&
+      matchFilter(groupName, filters.group) &&
+      (filters.shared === "all" || (filters.shared === "yes" ? !!r.is_shared : !r.is_shared)) &&
+      matchFilter(r.attributed_to, filters.user)
+    );
+  });
+
+  const findProfileId = (name: string | undefined): string | null => {
+    if (!name) return null;
+    const n = name.toLowerCase().trim();
+    return allProfiles.find((p) => (p.display_name || "").toLowerCase().trim() === n || (p.email || "").toLowerCase().trim() === n)?.id ?? null;
+  };
 
   const findCategoryId = (name: string | undefined, type: "expense" | "income"): string | null => {
     if (!name) return null;
@@ -410,7 +501,7 @@ function HistoricalImport() {
           competence,
           description: String(descRaw).trim() || "Sem descrição",
           grouped_description: String(grpDescRaw).trim(),
-          amount: Math.abs(amount),
+          amount,
           type,
           category_id: findCategoryId(catRaw, type),
           source: (srcRaw || "").trim(),
@@ -512,9 +603,9 @@ function HistoricalImport() {
             </div>
             <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
           </div>
-          <div className="overflow-x-auto border-t">
+          <div className="overflow-auto border-t max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
+              <thead className="bg-white text-muted-foreground sticky top-0 z-20">
                 <tr>
                   <th className="text-left p-2">Data</th>
                   <th className="text-left p-2">Competência</th>
@@ -522,6 +613,7 @@ function HistoricalImport() {
                   <th className="text-left p-2">Desc. agrupada</th>
                   <th className="text-left p-2">Tipo</th>
                   <th className="text-left p-2">Categoria</th>
+                  <th className="text-left p-2">Subcategoria</th>
                   <th className="text-left p-2">Origem</th>
                   <th className="text-left p-2">Grupo</th>
                   <th className="text-center p-2">Compart.</th>
@@ -531,16 +623,32 @@ function HistoricalImport() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
+                <tr className="border-t bg-white sticky top-[41px] z-10">
+                  <td className="p-2"><Input type="date" value={filters.date} onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))} className="h-8 w-36" /></td>
+                  <td className="p-2"><Input value={filters.competence} onChange={(e) => setFilters((f) => ({ ...f, competence: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.description} onChange={(e) => setFilters((f) => ({ ...f, description: e.target.value }))} className="h-8 min-w-44" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.grouped} onChange={(e) => setFilters((f) => ({ ...f, grouped: e.target.value }))} className="h-8 min-w-36" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Select value={filters.type} onValueChange={(v) => setFilters((f) => ({ ...f, type: v }))}><SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="expense">Despesa</SelectItem><SelectItem value="income">Receita</SelectItem></SelectContent></Select></td>
+                  <td className="p-2"><Input value={filters.category} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.subcategory} onChange={(e) => setFilters((f) => ({ ...f, subcategory: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.source} onChange={(e) => setFilters((f) => ({ ...f, source: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Input value={filters.group} onChange={(e) => setFilters((f) => ({ ...f, group: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
+                  <td className="p-2"><Select value={filters.shared} onValueChange={(v) => setFilters((f) => ({ ...f, shared: v as "all" | "yes" | "no" }))}><SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="yes">Sim</SelectItem><SelectItem value="no">Não</SelectItem></SelectContent></Select></td>
+                  <td className="p-2"><Input value={filters.user} onChange={(e) => setFilters((f) => ({ ...f, user: e.target.value }))} className="h-8 w-28" placeholder="Filtrar (:vazio)" /></td>
+                  <td></td><td></td>
+                </tr>
+                {historicalFilteredRows.map(({ r, idx }) => {
                   const rowCats = allCats.filter((c) => c.type === r.type);
+                  const selectedCat = rowCats.find((c) => c.id === r.category_id);
+                  const subcategoryValue = subcategoryDrafts[idx] ?? selectedCat?.name ?? "";
                   return (
-                    <tr key={i} className="border-t align-top">
-                      <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
-                      <td className="p-2"><Input type="month" value={r.competence.slice(0, 7)} onChange={(e) => updateRow(i, { competence: e.target.value || r.competence })} className="h-8 w-32" /></td>
-                      <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-44" /></td>
-                      <td className="p-2"><Input value={r.grouped_description} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} className="h-8 min-w-36" /></td>
+                    <tr key={idx} className="border-t align-top">
+                      <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(idx, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
+                      <td className="p-2"><Input value={r.competence} onChange={(e) => updateRow(idx, { competence: normalizeCompetence(e.target.value) || r.competence })} className="h-8 w-32" placeholder="Mai/2026" /></td>
+                      <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(idx, { description: e.target.value })} className="h-8 min-w-44" /></td>
+                      <td className="p-2"><Input value={r.grouped_description} onChange={(e) => updateRow(idx, { grouped_description: e.target.value })} className="h-8 min-w-36" /></td>
                       <td className="p-2">
-                        <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
+                        <Select value={r.type} onValueChange={(v) => updateRow(idx, { type: v as "expense" | "income" })}>
                           <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="expense">Despesa</SelectItem>
@@ -548,18 +656,35 @@ function HistoricalImport() {
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="p-2">
-                        <Select value={r.category_id ?? "none"} onValueChange={(v) => updateRow(i, { category_id: v === "none" ? null : v })}>
-                          <SelectTrigger className="h-8 w-44"><SelectValue placeholder="Sem categoria" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sem categoria</SelectItem>
-                            {rowCats.map((c) => <SelectItem key={c.id} value={c.id}>{c.parent ? `${c.parent} · ${c.name}` : c.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                      <td className="p-2 text-muted-foreground min-w-32">
+                        {selectedCat?.parent ?? "—"}
                       </td>
-                      <td className="p-2"><Input value={r.source} onChange={(e) => updateRow(i, { source: e.target.value })} className="h-8 min-w-32" /></td>
                       <td className="p-2">
-                        <Select value={r.group_id ?? "none"} onValueChange={(v) => updateRow(i, { group_id: v === "none" ? null : v })}>
+                        <Input
+                          list={`historical-subcategory-${idx}`}
+                          value={subcategoryValue}
+                          onChange={(e) => {
+                            setSubcategoryDrafts((s) => ({ ...s, [idx]: e.target.value }));
+                            const match = rowCats.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                            if (match) updateRow(idx, { category_id: match.id });
+                          }}
+                          onBlur={(e) => {
+                            const match = rowCats.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                            if (!match) {
+                              updateRow(idx, { category_id: null });
+                              setSubcategoryDrafts((s) => ({ ...s, [idx]: "" }));
+                            }
+                          }}
+                          className="h-8 w-44"
+                          placeholder="Digite subcategoria"
+                        />
+                        <datalist id={`historical-subcategory-${idx}`}>
+                          {rowCats.map((c) => <option key={c.id} value={c.name} />)}
+                        </datalist>
+                      </td>
+                      <td className="p-2"><Input value={r.source} onChange={(e) => updateRow(idx, { source: e.target.value })} className="h-8 min-w-32" /></td>
+                      <td className="p-2">
+                        <Select value={r.group_id ?? "none"} onValueChange={(v) => updateRow(idx, { group_id: v === "none" ? null : v })}>
                           <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Sem grupo" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Sem grupo</SelectItem>
@@ -568,12 +693,12 @@ function HistoricalImport() {
                         </Select>
                       </td>
                       <td className="p-2 text-center">
-                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(i, { is_shared: !!v })} />
+                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(idx, { is_shared: !!v })} />
                       </td>
-                      <td className="p-2"><Input value={r.attributed_to} onChange={(e) => updateRow(i, { attributed_to: e.target.value })} placeholder="Nome" className="h-8 min-w-28" /></td>
-                      <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(i, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
+                      <td className="p-2"><Input value={r.attributed_to} onChange={(e) => updateRow(idx, { attributed_to: e.target.value })} placeholder="Nome" className="h-8 min-w-28" /></td>
+                      <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(idx, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
                       <td className="p-2 text-right">
-                        <Button size="icon" variant="ghost" onClick={() => remove(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <Button size="icon" variant="ghost" onClick={() => remove(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </td>
                     </tr>
                   );
@@ -581,7 +706,7 @@ function HistoricalImport() {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-muted/30">
-                  <td className="p-2 font-medium" colSpan={10}>Totais</td>
+                  <td className="p-2 font-medium" colSpan={11}>Totais</td>
                   <td className="p-2 text-right font-medium">{fmtMoney(rows.reduce((a, b) => a + b.amount, 0))}</td>
                   <td></td>
                 </tr>

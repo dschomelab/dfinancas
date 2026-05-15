@@ -24,20 +24,23 @@ Retorne APENAS JSON válido com a estrutura: { "rows": [{ "occurred_on": "YYYY-M
 export const extractTransactionsFromText = createServerFn({ method: "POST" })
   .inputValidator((d: { text: string; defaultType: "expense" | "income"; hint?: string }) => d)
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY ausente. Ative o Lovable AI Gateway.");
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY ausente. Configure no ambiente para habilitar extração de PDF.");
+
+    const baseUrl = (process.env.AI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+    const model = process.env.AI_MODEL ?? "gpt-4o-mini";
 
     const truncated = data.text.slice(0, 60000);
     const userMsg = `Tipo padrão sugerido: ${data.defaultType}. ${data.hint ? `Contexto/origem: ${data.hint}.` : ""}\n\nTexto:\n${truncated}`;
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userMsg },

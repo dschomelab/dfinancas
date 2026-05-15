@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { useCategories, useGroups, type Transaction } from "@/lib/queries";
+import { useCategories, useGroups, useProfiles, type Transaction } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -23,6 +23,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
   const { user } = useAuth();
   const cats = useCategories();
   const groups = useGroups();
+  const profiles = useProfiles();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -37,6 +38,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
     group_id: "",
     is_shared: false,
     notes: "",
+    attributed_to_user_id: "",
   });
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
         group_id: initial?.group_id ?? "",
         is_shared: initial?.is_shared ?? false,
         notes: initial?.notes ?? "",
+        attributed_to_user_id: initial?.attributed_to_user_id ?? "",
       });
     }
   }, [open, initial]);
@@ -80,6 +83,9 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
       group_id: form.group_id || null,
       is_shared: form.is_shared,
       notes: form.notes || null,
+      attributed_to: profiles.data?.find((p) => p.id === form.attributed_to_user_id)?.display_name
+        || profiles.data?.find((p) => p.id === form.attributed_to_user_id)?.email
+        || null,
     };
     const { error } = initial?.id
       ? await supabase.from("transactions").update(payload).eq("id", initial.id)
@@ -145,6 +151,18 @@ export function TransactionDialog({ open, onOpenChange, initial }: Props) {
                 <SelectContent>
                   <SelectItem value="none">Sem categoria</SelectItem>
                   {filteredCats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Responsável</Label>
+              <Select value={form.attributed_to_user_id || "none"} onValueChange={(v) => setForm({ ...form, attributed_to_user_id: v === "none" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Sem responsável" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem responsável</SelectItem>
+                  {(profiles.data ?? []).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.display_name || p.email || "Usuário"}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

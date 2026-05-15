@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingDown, TrendingUp, Wallet, ChevronDown, ChevronRight, CalendarRange } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, CartesianGrid, Legend } from "recharts";
 
@@ -30,38 +31,54 @@ function Dashboard() {
   const current = months[months.length - 1];
   const [selected, setSelected] = useState<string[]>([current]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [sharedFilter, setSharedFilter] = useState<"all" | "shared" | "personal">("all");
+  const [responsibleFilter, setResponsibleFilter] = useState<string>("all");
 
-  const tx = useTransactions({ competences: selected, type: "all" });
+  const tx = useTransactions({ competences: selected, type: "all", shared: sharedFilter });
   const cats = useCategories();
   const profiles = useProfiles();
   const monthSeries = useTransactions({ type: "all" });
 
-  const totals = useMemo(() => {
+  const resolvedResponsibleName = (t: { attributed_to_user_id: string | null; attributed_to: string | null }) => {
+    const profile = profiles.data?.find((p) => p.id === t.attributed_to_user_id);
+    return (profile?.display_name || profile?.email || t.attributed_to || "Sem responsável").trim();
+  };
+
+  const filteredTx = useMemo(() => {
     const list = tx.data ?? [];
+    if (responsibleFilter === "all") return list;
+    const selectedProfile = profiles.data?.find((p) => p.id === responsibleFilter);
+    const selectedName = (selectedProfile?.display_name || selectedProfile?.email || "").trim().toLowerCase();
+    if (!selectedName) return list;
+    return list.filter((t) => resolvedResponsibleName(t).toLowerCase() === selectedName);
+  }, [tx.data, responsibleFilter, profiles.data]);
+
+  const totals = useMemo(() => {
+    const list = filteredTx;
     const income = list.filter((t) => t.type === "income").reduce((a, b) => a + Number(b.amount), 0);
     const expense = list.filter((t) => t.type === "expense").reduce((a, b) => a + Number(b.amount), 0);
     return { income, expense, balance: income - expense };
-  }, [tx.data]);
+  }, [filteredTx]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    (tx.data ?? []).filter((t) => t.type === "expense").forEach((t) => {
+    filteredTx.filter((t) => t.type === "expense").forEach((t) => {
       const cat = cats.data?.find((c) => c.id === t.category_id);
       const name = cat?.name ?? "Sem categoria";
       map.set(name, (map.get(name) ?? 0) + Number(t.amount));
     });
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [tx.data, cats.data]);
+  }, [filteredTx, cats.data]);
 
   const byUser = useMemo(() => {
     const map = new Map<string, number>();
-    (tx.data ?? []).filter((t) => t.type === "expense").forEach((t) => {
+    filteredTx.filter((t) => t.type === "expense").forEach((t) => {
       const p = profiles.data?.find((pr) => pr.id === t.user_id);
       const name = p?.display_name || p?.email || "Você";
       map.set(name, (map.get(name) ?? 0) + Number(t.amount));
     });
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [tx.data, profiles.data]);
+  }, [filteredTx, profiles.data]);
 
   const series = useMemo(() => {
     return months.slice(-6).map((m) => {
@@ -74,10 +91,26 @@ function Dashboard() {
     });
   }, [monthSeries.data, months]);
 
+  const settlement = useMemo(() => {
+    const sharedExpenses = filteredTx.filter((t) => t.type === "expense" && t.is_shared);
+    const total = sharedExpenses.reduce((acc, t) => acc + Number(t.amount), 0);
+    const half = total / 2;
+    const byResponsible = new Map<string, number>();
+    for (const t of sharedExpenses) {
+      const key = resolvedResponsibleName(t);
+      byResponsible.set(key, (byResponsible.get(key) ?? 0) + Number(t.amount));
+    }
+    const rows = Array.from(byResponsible.entries()).map(([name, paid]) => {
+      const diff = paid - half;
+      return { id: name, name, paid, ideal: half, diff };
+    }).sort((a, b) => b.paid - a.paid);
+    return { total, half, rows };
+  }, [filteredTx, profiles.data]);
+
   // Matrix: category -> grouped_description (or "—") -> total
   const matrix = useMemo(() => {
     const root = new Map<string, { total: number; groups: Map<string, number> }>();
-    (tx.data ?? []).filter((t) => t.type === "expense").forEach((t) => {
+    filteredTx.filter((t) => t.type === "expense").forEach((t) => {
       const cat = cats.data?.find((c) => c.id === t.category_id);
       const catName = cat?.name ?? "Sem categoria";
       const gd = (t.grouped_description ?? "").trim() || "— Sem agrupamento";
@@ -93,7 +126,7 @@ function Dashboard() {
         groups: Array.from(v.groups.entries()).map(([g, val]) => ({ name: g, value: val })).sort((a, b) => b.value - a.value),
       }))
       .sort((a, b) => b.total - a.total);
-  }, [tx.data, cats.data]);
+  }, [filteredTx, cats.data]);
 
   const toggleMonth = (m: string) => {
     setSelected((s) => (s.includes(m) ? s.filter((x) => x !== m) : [...s, m]));
@@ -120,29 +153,83 @@ function Dashboard() {
           <h1 className="font-display text-3xl font-semibold">Visão geral</h1>
           <p className="text-sm text-muted-foreground">Acompanhe receitas e despesas por competência (seleção múltipla).</p>
         </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-64 justify-between capitalize">
-              <span className="flex items-center gap-2"><CalendarRange className="h-4 w-4" />{selectedLabel}</span>
-              <ChevronDown className="h-4 w-4 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-64 p-2 max-h-80 overflow-auto">
-            <div className="flex justify-between px-2 py-1 text-xs text-muted-foreground">
-              <button className="hover:underline" onClick={() => setSelected(months)}>Selecionar tudo</button>
-              <button className="hover:underline" onClick={() => setSelected([])}>Limpar</button>
-            </div>
-            <div className="space-y-1">
-              {months.slice().reverse().map((m) => (
-                <label key={m} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
-                  <Checkbox checked={selected.includes(m)} onCheckedChange={() => toggleMonth(m)} />
-                  <span className="capitalize text-sm">{fmtCompetence(m)}</span>
-                </label>
+        <div className="flex flex-wrap gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-64 justify-between capitalize">
+                <span className="flex items-center gap-2"><CalendarRange className="h-4 w-4" />{selectedLabel}</span>
+                <ChevronDown className="h-4 w-4 opacity-60" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-2 max-h-80 overflow-auto">
+              <div className="flex justify-between px-2 py-1 text-xs text-muted-foreground">
+                <button className="hover:underline" onClick={() => setSelected(months)}>Selecionar tudo</button>
+                <button className="hover:underline" onClick={() => setSelected([])}>Limpar</button>
+              </div>
+              <div className="space-y-1">
+                {months.slice().reverse().map((m) => (
+                  <label key={m} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                    <Checkbox checked={selected.includes(m)} onCheckedChange={() => toggleMonth(m)} />
+                    <span className="capitalize text-sm">{fmtCompetence(m)}</span>
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Select value={responsibleFilter} onValueChange={setResponsibleFilter}>
+            <SelectTrigger className="w-56"><SelectValue placeholder="Responsável" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os responsáveis</SelectItem>
+              {(profiles.data ?? []).map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.display_name || p.email || "Usuário"}</SelectItem>
               ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+            </SelectContent>
+          </Select>
+          <Select value={sharedFilter} onValueChange={(v) => setSharedFilter(v as "all" | "shared" | "personal")}>
+            <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Compart. + pessoais</SelectItem>
+              <SelectItem value="shared">Apenas compartilhados</SelectItem>
+              <SelectItem value="personal">Apenas pessoais</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      <Card className="p-5">
+        <h2 className="font-display font-semibold mb-3">Rateio dos compartilhados (50/50)</h2>
+        {settlement.rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sem despesas compartilhadas no período/filtros.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">Total compartilhado: <span className="font-medium text-foreground">{fmtMoney(settlement.total)}</span> · Cota ideal por pessoa: <span className="font-medium text-foreground">{fmtMoney(settlement.half)}</span></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="text-left py-2 pr-2">Responsável</th>
+                    <th className="text-right py-2 px-2">Pago</th>
+                    <th className="text-right py-2 px-2">Cota ideal</th>
+                    <th className="text-right py-2 pl-2">Diferença</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlement.rows.map((r) => (
+                    <tr key={r.id} className="border-b">
+                      <td className="py-2 pr-2">{r.name}</td>
+                      <td className="py-2 px-2 text-right">{fmtMoney(r.paid)}</td>
+                      <td className="py-2 px-2 text-right">{fmtMoney(r.ideal)}</td>
+                      <td className={`py-2 pl-2 text-right font-medium ${r.diff >= 0 ? "text-success" : "text-destructive"}`}>
+                        {r.diff >= 0 ? `deve receber ${fmtMoney(r.diff)}` : `deve pagar ${fmtMoney(Math.abs(r.diff))}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard label="Receitas" value={fmtMoney(totals.income)} icon={<TrendingUp className="h-5 w-5" />} tone="success" />

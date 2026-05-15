@@ -1,3 +1,12 @@
+# Language Rules
+
+- ALWAYS communicate in Brazilian Portuguese (pt-BR)
+- ALWAYS explain changes in pt-BR
+- ALWAYS answer in pt-BR
+- Keep code in English
+- Keep variable names consistent with existing codebase
+- Comments in code may be pt-BR when useful
+
 # Project Rules — Finance App
 
 You are modifying an EXISTING production-style codebase exported from Lovable.
