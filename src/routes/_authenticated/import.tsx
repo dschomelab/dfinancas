@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import Papa from "papaparse";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCategories, useGroups, useTransactionHistory, type HistoryEntry } from "@/lib/queries";
 import { useAuth } from "@/lib/auth-context";
@@ -12,19 +14,40 @@ import { useServerFn } from "@tanstack/react-start";
 import { extractTransactionsFromText } from "@/lib/ai-import.functions";
 import { parseCsvText, inferSourceFromFilename, type ParsedRow } from "@/lib/csv-parser";
 import { extractPdfText } from "@/lib/pdf-extract";
-import { competenceFromDate, fmtDate, fmtMoney } from "@/lib/format";
+import { competenceFromDate, fmtDate, fmtMoney, parseAmount, parseDateLoose, normalizeCompetence } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Upload, FileText, Sparkles, Trash2 } from "lucide-react";
+import { Upload, FileText, Sparkles, Trash2, History } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/import")({
   component: ImportPage,
 });
 
-type Row = ParsedRow & { category_id?: string | null; grouped_description?: string; is_shared?: boolean };
-
 function ImportPage() {
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div>
+        <h1 className="font-display text-3xl font-semibold">Importar arquivo</h1>
+        <p className="text-sm text-muted-foreground">Use a importação mensal para fechamentos do mês ou a histórica para carga em lote de períodos antigos.</p>
+      </div>
+      <Tabs defaultValue="monthly" className="w-full">
+        <TabsList>
+          <TabsTrigger value="monthly"><FileText className="h-4 w-4 mr-2" />Mensal</TabsTrigger>
+          <TabsTrigger value="historical"><History className="h-4 w-4 mr-2" />Histórico (lote)</TabsTrigger>
+        </TabsList>
+        <TabsContent value="monthly" className="mt-6"><MonthlyImport /></TabsContent>
+        <TabsContent value="historical" className="mt-6"><HistoricalImport /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/* ============================== MENSAL ============================== */
+
+type MonthlyRow = ParsedRow & { category_id?: string | null; grouped_description?: string; is_shared?: boolean };
+
+function MonthlyImport() {
   const { user } = useAuth();
   const cats = useCategories();
   const groups = useGroups();
@@ -36,11 +59,10 @@ function ImportPage() {
   const [competence, setCompetence] = useState<string>(new Date().toISOString().slice(0, 7));
   const [sharedGroupId, setSharedGroupId] = useState<string>("none");
   const [source, setSource] = useState("");
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<MonthlyRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
 
-  // Normaliza descrição removendo parcelas (1/12, 02 de 12, parc 3-12), espaços e acentos
   const normalizeDesc = (s: string) =>
     (s || "")
       .toLowerCase()
@@ -55,7 +77,6 @@ function ImportPage() {
     const key = normalizeDesc(desc);
     if (!key || key.length < 3) return undefined;
     const list = history.data ?? [];
-    // exato primeiro, depois prefixo/contém
     return (
       list.find((h) => h.type === type && normalizeDesc(h.description) === key) ||
       list.find((h) => h.type === type && normalizeDesc(h.description).includes(key)) ||
@@ -63,7 +84,7 @@ function ImportPage() {
     );
   };
 
-  const applySuggestions = (r: Row): Row => {
+  const applySuggestions = (r: MonthlyRow): MonthlyRow => {
     const m = findHistoryMatch(r.description, r.type);
     if (!m) return r;
     return {
@@ -94,7 +115,7 @@ function ImportPage() {
         toast.info("Lendo PDF e extraindo com IA…");
         const text = await extractPdfText(file);
         const result = await aiExtract({ data: { text, defaultType, hint: source || inferred } });
-        const mapped: Row[] = (result.rows ?? []).map((r) => applySuggestions({
+        const mapped: MonthlyRow[] = (result.rows ?? []).map((r) => applySuggestions({
           occurred_on: r.occurred_on,
           description: r.description,
           source: r.source ?? source ?? inferred,
@@ -117,13 +138,12 @@ function ImportPage() {
     }
   };
 
-  const updateRow = (i: number, patch: Partial<Row>) => {
+  const updateRow = (i: number, patch: Partial<MonthlyRow>) => {
     setRows((rs) =>
       rs.map((r, idx) => {
         if (idx !== i) return r;
         const next = { ...r, ...patch };
         if (patch.type && patch.type !== r.type) next.category_id = null;
-        // Reaplica sugestões quando a descrição ou o tipo mudam
         if (patch.description !== undefined || patch.type !== undefined) {
           return applySuggestions(next);
         }
@@ -163,15 +183,10 @@ function ImportPage() {
   const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       <datalist id="grouped-suggestions">
         {groupedSuggestions.map((g) => <option key={g} value={g} />)}
       </datalist>
-      <div>
-        <h1 className="font-display text-3xl font-semibold">Importar arquivo</h1>
-        <p className="text-sm text-muted-foreground">CSV é lido localmente. PDF é interpretado por IA. Defina competência, origem e grupo padrão; marque a coluna "Compartilhado" linha a linha.</p>
-      </div>
-
       <Card className="p-6">
         <div className="grid md:grid-cols-4 gap-4">
           <div className="space-y-1.5">
@@ -292,6 +307,288 @@ function ImportPage() {
 
       {rows.length === 0 && (
         <p className="text-xs text-muted-foreground">{fmtDate(new Date())} · Dica: o nome do arquivo é usado como origem padrão (ex.: <em>nubank_2025-04.csv</em>).</p>
+      )}
+    </div>
+  );
+}
+
+/* ============================== HISTÓRICO (LOTE) ============================== */
+
+type HistRow = {
+  occurred_on: string;
+  competence: string;
+  description: string;
+  grouped_description: string;
+  amount: number;
+  type: "expense" | "income";
+  category_id: string | null;
+  source: string;
+  group_id: string | null;
+  is_shared: boolean;
+  attributed_to: string;
+  _error?: string;
+};
+
+const HIST_HEADERS = [
+  "data", "competencia", "descricao", "descricao_agrupada", "valor",
+  "tipo", "categoria", "origem", "grupo", "compartilhado", "usuario",
+];
+
+function pickKey(row: Record<string, string>, candidates: string[]): string | undefined {
+  const keys = Object.keys(row);
+  for (const c of candidates) {
+    const k = keys.find((k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() === c);
+    if (k) return row[k];
+  }
+  return undefined;
+}
+
+function parseTipo(v: string | undefined): "expense" | "income" {
+  const s = (v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (["receita", "income", "credito", "credit", "entrada", "+"].includes(s)) return "income";
+  return "expense";
+}
+function parseBool(v: string | undefined): boolean {
+  const s = (v || "").toLowerCase().trim();
+  return ["sim", "true", "1", "yes", "y", "s"].includes(s);
+}
+
+function HistoricalImport() {
+  const { user } = useAuth();
+  const cats = useCategories();
+  const groups = useGroups();
+  const qc = useQueryClient();
+  const [rows, setRows] = useState<HistRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [filename, setFilename] = useState("");
+
+  const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const allGroups = groups.data ?? [];
+
+  const findCategoryId = (name: string | undefined, type: "expense" | "income"): string | null => {
+    if (!name) return null;
+    const n = name.toLowerCase().trim();
+    return allCats.find((c) => c.type === type && c.name.toLowerCase() === n)?.id ?? null;
+  };
+  const findGroupId = (name: string | undefined): string | null => {
+    if (!name) return null;
+    const n = name.toLowerCase().trim();
+    return allGroups.find((g) => g.name.toLowerCase() === n)?.id ?? null;
+  };
+
+  const onFile = async (file: File) => {
+    setBusy(true);
+    setFilename(file.name);
+    try {
+      const text = await file.text();
+      const parsed = Papa.parse<Record<string, string>>(text, {
+        header: true, skipEmptyLines: true, transformHeader: (h) => h.trim(),
+      });
+      const out: HistRow[] = [];
+      for (const r of parsed.data) {
+        if (!r || typeof r !== "object") continue;
+        const dateRaw = pickKey(r, ["data", "date", "dt"]);
+        const compRaw = pickKey(r, ["competencia", "competence", "mes", "mes/ano"]);
+        const descRaw = pickKey(r, ["descricao", "description", "historico"]) || "";
+        const grpDescRaw = pickKey(r, ["descricao_agrupada", "descricaoagrupada", "agrupada", "grouped_description"]) || "";
+        const amtRaw = pickKey(r, ["valor", "amount", "value"]);
+        const tipoRaw = pickKey(r, ["tipo", "type"]);
+        const catRaw = pickKey(r, ["categoria", "category"]);
+        const srcRaw = pickKey(r, ["origem", "source", "banco", "conta", "cartao"]);
+        const grpRaw = pickKey(r, ["grupo", "group"]);
+        const sharedRaw = pickKey(r, ["compartilhado", "shared", "compart"]);
+        const userRaw = pickKey(r, ["usuario", "user", "responsavel", "atribuido"]);
+
+        const occurred_on = dateRaw ? parseDateLoose(dateRaw) : null;
+        const amount = parseAmount(amtRaw ?? "");
+        if (!occurred_on || amount === null) continue;
+        const type = parseTipo(tipoRaw);
+        const competence = compRaw ? normalizeCompetence(compRaw) || competenceFromDate(occurred_on) : competenceFromDate(occurred_on);
+
+        out.push({
+          occurred_on,
+          competence,
+          description: String(descRaw).trim() || "Sem descrição",
+          grouped_description: String(grpDescRaw).trim(),
+          amount: Math.abs(amount),
+          type,
+          category_id: findCategoryId(catRaw, type),
+          source: (srcRaw || "").trim(),
+          group_id: findGroupId(grpRaw),
+          is_shared: parseBool(sharedRaw),
+          attributed_to: (userRaw || "").trim(),
+        });
+      }
+      setRows(out);
+      toast.success(`${out.length} lançamentos lidos`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao ler CSV");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateRow = (i: number, patch: Partial<HistRow>) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch, ...(patch.type && patch.type !== r.type ? { category_id: null } : {}) } : r)));
+  const remove = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
+
+  const confirm = async () => {
+    if (!user || rows.length === 0) return;
+    setBusy(true);
+    const payload = rows.map((r) => ({
+      user_id: user.id,
+      type: r.type,
+      occurred_on: r.occurred_on,
+      competence: r.competence,
+      description: r.description,
+      grouped_description: r.grouped_description?.trim() || null,
+      source: r.source?.trim() || null,
+      amount: r.amount,
+      category_id: r.category_id || null,
+      group_id: r.is_shared ? r.group_id : null,
+      is_shared: !!r.is_shared,
+      attributed_to: r.attributed_to?.trim() || null,
+    }));
+    const { error } = await supabase.from("transactions").insert(payload);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success(`${payload.length} lançamentos importados!`);
+    qc.invalidateQueries({ queryKey: ["transactions"] });
+    setRows([]);
+    setFilename("");
+  };
+
+  const downloadTemplate = () => {
+    const csv = HIST_HEADERS.join(",") + "\n" +
+      "2025-04-15,2025-04,Mercado Extra,Mercado mensal,350.50,despesa,Supermercado,Nubank,Casa,sim,Henrique\n" +
+      "15/03/2025,03/2025,Salário Março,,8500,receita,Salário,Empresa X,,nao,Henrique\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "modelo_historico.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="space-y-2">
+            <h2 className="font-display text-xl font-semibold">Importação histórica em lote</h2>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Carregue um CSV com todos os campos no nível da linha. Colunas esperadas (em qualquer ordem):
+              <br />
+              <code className="text-xs">{HIST_HEADERS.join(", ")}</code>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              <strong>tipo</strong>: <em>despesa</em> ou <em>receita</em> · <strong>compartilhado</strong>: <em>sim/não</em> ·
+              <strong> categoria</strong> e <strong>grupo</strong> são casados pelo nome (ignora maiúsculas) ·
+              <strong> competencia</strong> aceita <em>YYYY-MM</em>, <em>MM/YYYY</em> ou data completa (sempre normalizada para o dia 01).
+            </p>
+          </div>
+          <Button variant="outline" onClick={downloadTemplate}>Baixar modelo CSV</Button>
+        </div>
+
+        <label className="mt-6 flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl p-10 cursor-pointer hover:bg-muted/30 transition">
+          <Upload className="h-8 w-8 text-primary" />
+          <div className="font-medium">Selecione o CSV histórico</div>
+          <div className="text-xs text-muted-foreground">{filename || "Nenhum arquivo selecionado"}</div>
+          <input
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
+            disabled={busy}
+          />
+        </label>
+      </Card>
+
+      {rows.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-accent" />
+              <span className="font-medium">{rows.length} lançamentos pré-visualizados</span>
+            </div>
+            <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
+          </div>
+          <div className="overflow-x-auto border-t">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="text-left p-2">Data</th>
+                  <th className="text-left p-2">Competência</th>
+                  <th className="text-left p-2">Descrição</th>
+                  <th className="text-left p-2">Desc. agrupada</th>
+                  <th className="text-left p-2">Tipo</th>
+                  <th className="text-left p-2">Categoria</th>
+                  <th className="text-left p-2">Origem</th>
+                  <th className="text-left p-2">Grupo</th>
+                  <th className="text-center p-2">Compart.</th>
+                  <th className="text-left p-2">Usuário</th>
+                  <th className="text-right p-2">Valor</th>
+                  <th className="p-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const rowCats = allCats.filter((c) => c.type === r.type);
+                  return (
+                    <tr key={i} className="border-t align-top">
+                      <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
+                      <td className="p-2"><Input type="month" value={r.competence.slice(0, 7)} onChange={(e) => updateRow(i, { competence: e.target.value ? `${e.target.value}-01` : r.competence })} className="h-8 w-32" /></td>
+                      <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-44" /></td>
+                      <td className="p-2"><Input value={r.grouped_description} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} className="h-8 min-w-36" /></td>
+                      <td className="p-2">
+                        <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
+                          <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="expense">Despesa</SelectItem>
+                            <SelectItem value="income">Receita</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="p-2">
+                        <Select value={r.category_id ?? "none"} onValueChange={(v) => updateRow(i, { category_id: v === "none" ? null : v })}>
+                          <SelectTrigger className="h-8 w-44"><SelectValue placeholder="Sem categoria" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sem categoria</SelectItem>
+                            {rowCats.map((c) => <SelectItem key={c.id} value={c.id}>{c.parent ? `${c.parent} · ${c.name}` : c.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="p-2"><Input value={r.source} onChange={(e) => updateRow(i, { source: e.target.value })} className="h-8 min-w-32" /></td>
+                      <td className="p-2">
+                        <Select value={r.group_id ?? "none"} onValueChange={(v) => updateRow(i, { group_id: v === "none" ? null : v })}>
+                          <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Sem grupo" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sem grupo</SelectItem>
+                            {allGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="p-2 text-center">
+                        <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(i, { is_shared: !!v })} />
+                      </td>
+                      <td className="p-2"><Input value={r.attributed_to} onChange={(e) => updateRow(i, { attributed_to: e.target.value })} placeholder="Nome" className="h-8 min-w-28" /></td>
+                      <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(i, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
+                      <td className="p-2 text-right">
+                        <Button size="icon" variant="ghost" onClick={() => remove(i)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t bg-muted/30">
+                  <td className="p-2 font-medium" colSpan={10}>Totais</td>
+                  <td className="p-2 text-right font-medium">{fmtMoney(rows.reduce((a, b) => a + b.amount, 0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
