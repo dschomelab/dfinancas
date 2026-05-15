@@ -123,6 +123,10 @@ function ImportPage() {
         if (idx !== i) return r;
         const next = { ...r, ...patch };
         if (patch.type && patch.type !== r.type) next.category_id = null;
+        // Reaplica sugestões quando a descrição ou o tipo mudam
+        if (patch.description !== undefined || patch.type !== undefined) {
+          return applySuggestions(next);
+        }
         return next;
       }),
     );
