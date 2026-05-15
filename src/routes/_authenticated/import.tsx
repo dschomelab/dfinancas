@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCategories, useGroups } from "@/lib/queries";
+import { useCategories, useGroups, useTransactionHistory, type HistoryEntry } from "@/lib/queries";
 import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { extractTransactionsFromText } from "@/lib/ai-import.functions";
