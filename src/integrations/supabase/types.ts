@@ -171,6 +171,7 @@ export type Database = {
       transactions: {
         Row: {
           amount: number
+          attributed_to: string | null
           category_id: string | null
           competence: string
           created_at: string
@@ -189,6 +190,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          attributed_to?: string | null
           category_id?: string | null
           competence: string
           created_at?: string
@@ -207,6 +209,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          attributed_to?: string | null
           category_id?: string | null
           competence?: string
           created_at?: string
