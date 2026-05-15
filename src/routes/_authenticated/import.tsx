@@ -536,7 +536,7 @@ function HistoricalImport() {
                   return (
                     <tr key={i} className="border-t align-top">
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
-                      <td className="p-2"><Input type="month" value={r.competence.slice(0, 7)} onChange={(e) => updateRow(i, { competence: e.target.value ? `${e.target.value}-01` : r.competence })} className="h-8 w-32" /></td>
+                      <td className="p-2"><Input type="month" value={r.competence.slice(0, 7)} onChange={(e) => updateRow(i, { competence: e.target.value || r.competence })} className="h-8 w-32" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-44" /></td>
                       <td className="p-2"><Input value={r.grouped_description} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} className="h-8 min-w-36" /></td>
                       <td className="p-2">
