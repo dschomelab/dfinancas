@@ -94,6 +94,32 @@ export function useTransactions(filters: TxFilters) {
   });
 }
 
+export type HistoryEntry = {
+  description: string;
+  grouped_description: string | null;
+  category_id: string | null;
+  is_shared: boolean;
+  type: "expense" | "income";
+  occurred_on: string;
+};
+
+export function useTransactionHistory() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["tx-history", user?.id],
+    enabled: !!user,
+    queryFn: async (): Promise<HistoryEntry[]> => {
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("description, grouped_description, category_id, is_shared, type, occurred_on")
+        .order("occurred_on", { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+      return (data ?? []) as HistoryEntry[];
+    },
+  });
+}
+
 export type Profile = { id: string; display_name: string; email: string | null };
 
 export function useProfiles() {
