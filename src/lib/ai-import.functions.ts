@@ -14,59 +14,167 @@ const ResponseSchema = z.object({
 });
 
 const SYSTEM_PROMPT = `Você é um extrator de lançamentos financeiros.
-Receberá texto bruto de um extrato bancário, fatura de cartão, ou recibo (em português ou inglês).
-Retorne APENAS JSON válido com a estrutura: { "rows": [{ "occurred_on": "YYYY-MM-DD", "description": "string", "source": "string|null", "amount": number, "type": "expense"|"income" }] }
-- "amount" sempre POSITIVO em reais.
-- "type" = "expense" para débitos/saídas/pagamentos e "income" para créditos/entradas/recebimentos.
-- "source" = banco/cartão/origem se identificável, senão null.
-- Ignore totais, saldos, taxas resumo. Apenas lançamentos individuais.`;
 
-export const extractTransactionsFromText = createServerFn({ method: "POST" })
-  .inputValidator((d: { text: string; defaultType: "expense" | "income"; hint?: string }) => d)
+Receberá texto bruto de extrato bancário, fatura de cartão, comprovante ou recibo.
+
+IMPORTANTE:
+- Retorne APENAS JSON válido
+- Nunca explique
+- Nunca escreva texto antes ou depois do JSON
+- Nunca use markdown
+- Nunca use \`\`\`
+- O JSON deve seguir EXATAMENTE este formato:
+
+{
+  "rows": [
+    {
+      "occurred_on": "YYYY-MM-DD",
+      "description": "string",
+      "source": "string|null",
+      "amount": number,
+      "type": "expense" | "income"
+    }
+  ]
+}
+
+REGRAS:
+- "amount" SEMPRE positivo
+- "type" = "expense" para débitos/saídas
+- "type" = "income" para créditos/entradas
+- "source" = banco/cartão/origem quando identificável, senão null
+- Ignore saldos, totais, resumos, limites e taxas
+- Extraia APENAS lançamentos individuais`;
+
+export const extractTransactionsFromText = createServerFn({
+  method: "POST",
+})
+  .inputValidator(
+    (d: {
+      text: string;
+      defaultType: "expense" | "income";
+      hint?: string;
+    }) => d,
+  )
   .handler(async ({ data }) => {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY ausente. Configure no ambiente para habilitar extração de PDF.");
+    // FIXO TEMPORARIAMENTE PARA TESTE
+    const baseUrl = "http://192.168.1.158:11434";
+    const model = "qwen2.5:3b";
 
-    const baseUrl = (process.env.AI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
-    const model = process.env.AI_MODEL ?? "gpt-4o-mini";
+    const truncated = data.text.slice(0, 4000);
 
-    const truncated = data.text.slice(0, 60000);
-    const userMsg = `Tipo padrão sugerido: ${data.defaultType}. ${data.hint ? `Contexto/origem: ${data.hint}.` : ""}\n\nTexto:\n${truncated}`;
+    const userMsg = `
+Tipo padrão sugerido: ${data.defaultType}.
+${data.hint ? `Contexto/origem: ${data.hint}` : ""}
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMsg },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
+Texto:
+${truncated}
+`.trim();
 
-    if (res.status === 429) throw new Error("Limite de requisições atingido. Tente novamente em instantes.");
-    if (res.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Falha na IA: ${res.status} ${txt.slice(0, 200)}`);
-    }
+    const controller = new AbortController();
 
-    const json = await res.json();
-    const content = json.choices?.[0]?.message?.content ?? "{}";
-    let parsed: unknown;
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 600000);
+
     try {
-      parsed = JSON.parse(content);
-    } catch {
-      throw new Error("Resposta da IA inválida.");
+      const endpoint = `${baseUrl}/v1/chat/completions`;
+
+      console.log("=== OLLAMA REQUEST ===");
+      console.log("Endpoint:", endpoint);
+      console.log("Modelo:", model);
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: SYSTEM_PROMPT,
+            },
+            {
+              role: "user",
+              content: userMsg,
+            },
+          ],
+          temperature: 0,
+          max_tokens:1000,
+        }),
+      });
+
+      console.log("STATUS:", res.status);
+
+      if (!res.ok) {
+        const txt = await res.text();
+
+        console.error("Erro IA:", txt);
+
+        throw new Error(
+          `Falha na IA (${res.status}): ${txt.slice(0, 300)}`,
+        );
+      }
+
+      const json = await res.json();
+
+      console.log("Resposta recebida:", json);
+
+      const content =
+        json?.choices?.[0]?.message?.content;
+
+      if (!content) {
+        console.error("Resposta inválida:", json);
+
+        throw new Error("Resposta vazia da IA.");
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        console.error("JSON inválido:", content);
+
+        throw new Error(
+          "A IA retornou JSON inválido.",
+        );
+      }
+
+      const result = ResponseSchema.safeParse(parsed);
+
+      if (!result.success) {
+        console.error(
+          "Schema inválido:",
+          result.error.flatten(),
+        );
+
+        return {
+          rows: [] as z.infer<typeof RowSchema>[],
+          error:
+            "Estrutura inesperada na resposta da IA.",
+        };
+      }
+
+      return {
+        rows: result.data.rows,
+      };
+    } catch (error) {
+      console.error("Erro geral:", error);
+
+      if (
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
+        throw new Error(
+          "A IA demorou muito para responder.",
+        );
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-    const result = ResponseSchema.safeParse(parsed);
-    if (!result.success) {
-      return { rows: [] as z.infer<typeof RowSchema>[], error: "Estrutura inesperada na resposta da IA." };
-    }
-    return { rows: result.data.rows };
   });
