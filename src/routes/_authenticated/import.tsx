@@ -87,14 +87,14 @@ function ImportPage() {
       if (file.name.toLowerCase().endsWith(".csv")) {
         const text = await file.text();
         const parsed = parseCsvText(text, defaultType, source || inferred);
-        setRows(parsed.rows.map((r) => ({ ...r, competence, category_id: null, grouped_description: "", is_shared: false })));
+        setRows(parsed.rows.map((r) => applySuggestions({ ...r, competence, category_id: null, grouped_description: "", is_shared: false })));
         toast.success(`${parsed.rows.length} lançamentos lidos do CSV`);
         if (parsed.errors.length) console.warn(parsed.errors);
       } else if (file.name.toLowerCase().endsWith(".pdf")) {
         toast.info("Lendo PDF e extraindo com IA…");
         const text = await extractPdfText(file);
         const result = await aiExtract({ data: { text, defaultType, hint: source || inferred } });
-        const mapped: Row[] = (result.rows ?? []).map((r) => ({
+        const mapped: Row[] = (result.rows ?? []).map((r) => applySuggestions({
           occurred_on: r.occurred_on,
           description: r.description,
           source: r.source ?? source ?? inferred,
