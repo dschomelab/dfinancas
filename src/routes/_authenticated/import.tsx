@@ -245,7 +245,7 @@ function ImportPage() {
                     <tr key={i} className="border-t align-top">
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-48" /></td>
-                      <td className="p-2"><Input value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
+                      <td className="p-2"><Input list="grouped-suggestions" value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
                       <td className="p-2">
                         <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
                           <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
