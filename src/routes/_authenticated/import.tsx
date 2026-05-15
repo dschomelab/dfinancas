@@ -164,6 +164,9 @@ function ImportPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      <datalist id="grouped-suggestions">
+        {groupedSuggestions.map((g) => <option key={g} value={g} />)}
+      </datalist>
       <div>
         <h1 className="font-display text-3xl font-semibold">Importar arquivo</h1>
         <p className="text-sm text-muted-foreground">CSV é lido localmente. PDF é interpretado por IA. Defina competência, origem e grupo padrão; marque a coluna "Compartilhado" linha a linha.</p>
