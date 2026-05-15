@@ -30,6 +30,7 @@ function ImportPage() {
   const groups = useGroups();
   const qc = useQueryClient();
   const aiExtract = useServerFn(extractTransactionsFromText);
+  const history = useTransactionHistory();
 
   const [defaultType, setDefaultType] = useState<"expense" | "income">("expense");
   const [competence, setCompetence] = useState<string>(new Date().toISOString().slice(0, 7));
@@ -38,6 +39,44 @@ function ImportPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
+
+  // Normaliza descrição removendo parcelas (1/12, 02 de 12, parc 3-12), espaços e acentos
+  const normalizeDesc = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\b(\d{1,3})\s*(?:\/|de|-)\s*(\d{1,3})\b/g, "")
+      .replace(/\bparc(?:ela)?\.?\s*\d+/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const findHistoryMatch = (desc: string, type: "expense" | "income"): HistoryEntry | undefined => {
+    const key = normalizeDesc(desc);
+    if (!key || key.length < 3) return undefined;
+    const list = history.data ?? [];
+    // exato primeiro, depois prefixo/contém
+    return (
+      list.find((h) => h.type === type && normalizeDesc(h.description) === key) ||
+      list.find((h) => h.type === type && normalizeDesc(h.description).includes(key)) ||
+      list.find((h) => h.type === type && key.includes(normalizeDesc(h.description)))
+    );
+  };
+
+  const applySuggestions = (r: Row): Row => {
+    const m = findHistoryMatch(r.description, r.type);
+    if (!m) return r;
+    return {
+      ...r,
+      grouped_description: r.grouped_description || m.grouped_description || "",
+      category_id: r.category_id || m.category_id || null,
+      is_shared: r.is_shared ?? m.is_shared,
+    };
+  };
+
+  const groupedSuggestions = Array.from(
+    new Set(((history.data ?? []).map((h) => h.grouped_description).filter(Boolean) as string[])),
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   const onFile = async (file: File) => {
     setBusy(true);
