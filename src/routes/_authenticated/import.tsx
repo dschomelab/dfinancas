@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCategories, useGroups } from "@/lib/queries";
+import { useCategories, useGroups, useTransactionHistory, type HistoryEntry } from "@/lib/queries";
 import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { extractTransactionsFromText } from "@/lib/ai-import.functions";
@@ -30,6 +30,7 @@ function ImportPage() {
   const groups = useGroups();
   const qc = useQueryClient();
   const aiExtract = useServerFn(extractTransactionsFromText);
+  const history = useTransactionHistory();
 
   const [defaultType, setDefaultType] = useState<"expense" | "income">("expense");
   const [competence, setCompetence] = useState<string>(new Date().toISOString().slice(0, 7));
@@ -38,6 +39,44 @@ function ImportPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
+
+  // Normaliza descrição removendo parcelas (1/12, 02 de 12, parc 3-12), espaços e acentos
+  const normalizeDesc = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\b(\d{1,3})\s*(?:\/|de|-)\s*(\d{1,3})\b/g, "")
+      .replace(/\bparc(?:ela)?\.?\s*\d+/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const findHistoryMatch = (desc: string, type: "expense" | "income"): HistoryEntry | undefined => {
+    const key = normalizeDesc(desc);
+    if (!key || key.length < 3) return undefined;
+    const list = history.data ?? [];
+    // exato primeiro, depois prefixo/contém
+    return (
+      list.find((h) => h.type === type && normalizeDesc(h.description) === key) ||
+      list.find((h) => h.type === type && normalizeDesc(h.description).includes(key)) ||
+      list.find((h) => h.type === type && key.includes(normalizeDesc(h.description)))
+    );
+  };
+
+  const applySuggestions = (r: Row): Row => {
+    const m = findHistoryMatch(r.description, r.type);
+    if (!m) return r;
+    return {
+      ...r,
+      grouped_description: r.grouped_description || m.grouped_description || "",
+      category_id: r.category_id || m.category_id || null,
+      is_shared: r.is_shared ?? m.is_shared,
+    };
+  };
+
+  const groupedSuggestions = Array.from(
+    new Set(((history.data ?? []).map((h) => h.grouped_description).filter(Boolean) as string[])),
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   const onFile = async (file: File) => {
     setBusy(true);
@@ -48,14 +87,14 @@ function ImportPage() {
       if (file.name.toLowerCase().endsWith(".csv")) {
         const text = await file.text();
         const parsed = parseCsvText(text, defaultType, source || inferred);
-        setRows(parsed.rows.map((r) => ({ ...r, competence, category_id: null, grouped_description: "", is_shared: false })));
+        setRows(parsed.rows.map((r) => applySuggestions({ ...r, competence, category_id: null, grouped_description: "", is_shared: false })));
         toast.success(`${parsed.rows.length} lançamentos lidos do CSV`);
         if (parsed.errors.length) console.warn(parsed.errors);
       } else if (file.name.toLowerCase().endsWith(".pdf")) {
         toast.info("Lendo PDF e extraindo com IA…");
         const text = await extractPdfText(file);
         const result = await aiExtract({ data: { text, defaultType, hint: source || inferred } });
-        const mapped: Row[] = (result.rows ?? []).map((r) => ({
+        const mapped: Row[] = (result.rows ?? []).map((r) => applySuggestions({
           occurred_on: r.occurred_on,
           description: r.description,
           source: r.source ?? source ?? inferred,
@@ -84,6 +123,10 @@ function ImportPage() {
         if (idx !== i) return r;
         const next = { ...r, ...patch };
         if (patch.type && patch.type !== r.type) next.category_id = null;
+        // Reaplica sugestões quando a descrição ou o tipo mudam
+        if (patch.description !== undefined || patch.type !== undefined) {
+          return applySuggestions(next);
+        }
         return next;
       }),
     );
@@ -121,6 +164,9 @@ function ImportPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      <datalist id="grouped-suggestions">
+        {groupedSuggestions.map((g) => <option key={g} value={g} />)}
+      </datalist>
       <div>
         <h1 className="font-display text-3xl font-semibold">Importar arquivo</h1>
         <p className="text-sm text-muted-foreground">CSV é lido localmente. PDF é interpretado por IA. Defina competência, origem e grupo padrão; marque a coluna "Compartilhado" linha a linha.</p>
@@ -202,7 +248,7 @@ function ImportPage() {
                     <tr key={i} className="border-t align-top">
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(i, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(i, { description: e.target.value })} className="h-8 min-w-48" /></td>
-                      <td className="p-2"><Input value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
+                      <td className="p-2"><Input list="grouped-suggestions" value={r.grouped_description ?? ""} onChange={(e) => updateRow(i, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
                       <td className="p-2">
                         <Select value={r.type} onValueChange={(v) => updateRow(i, { type: v as "expense" | "income" })}>
                           <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
