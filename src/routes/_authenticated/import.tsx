@@ -333,6 +333,9 @@ function MonthlyImport() {
                   const subcategoryValue = subcategoryDrafts[idx] ?? selectedCat?.name ?? "";
                   return (
                     <tr key={idx} className="border-t align-top">
+                      <td className="p-2 text-center">
+                        <Checkbox checked={selected.has(idx)} onCheckedChange={(v) => setSelected((s) => { const n = new Set(s); if (v) n.add(idx); else n.delete(idx); return n; })} />
+                      </td>
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(idx, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(idx, { description: e.target.value })} className="h-8 min-w-48" /></td>
                       <td className="p-2"><Input list="grouped-suggestions" value={r.grouped_description ?? ""} onChange={(e) => updateRow(idx, { grouped_description: e.target.value })} placeholder="Resumo" className="h-8 min-w-40" /></td>
