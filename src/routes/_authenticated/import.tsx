@@ -163,7 +163,7 @@ function MonthlyImport() {
 
   const removeSelected = () => {
     if (selected.size === 0) return;
-    if (!confirm(`Remover ${selected.size} linha(s) selecionada(s) da pré-visualização?`)) return;
+    if (!window.confirm(`Remover ${selected.size} linha(s) selecionada(s) da pré-visualização?`)) return;
     setRows((rs) => rs.filter((_, idx) => !selected.has(idx)));
     setSelected(new Set());
   };
