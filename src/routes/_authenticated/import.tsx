@@ -65,6 +65,7 @@ function MonthlyImport() {
   const [filters, setFilters] = useState({ date: "", description: "", grouped: "", type: "all", category: "", subcategory: "", shared: "all" as "all" | "yes" | "no" });
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const normalizeDesc = (s: string) =>
     (s || "")
@@ -155,7 +156,17 @@ function MonthlyImport() {
     );
   };
 
-  const remove = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
+  const remove = (i: number) => {
+    setRows((rs) => rs.filter((_, idx) => idx !== i));
+    setSelected((s) => { const n = new Set<number>(); s.forEach((x) => { if (x < i) n.add(x); else if (x > i) n.add(x - 1); }); return n; });
+  };
+
+  const removeSelected = () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Remover ${selected.size} linha(s) selecionada(s) da pré-visualização?`)) return;
+    setRows((rs) => rs.filter((_, idx) => !selected.has(idx)));
+    setSelected(new Set());
+  };
 
   const confirm = async () => {
     if (!user || rows.length === 0) return;
@@ -163,6 +174,7 @@ function MonthlyImport() {
     setBusy(true);
     const payload = rows.map((r) => ({
       user_id: user.id,
+      attributed_to_user_id: user.id,
       attributed_to: profiles.data?.find((p) => p.id === user.id)?.display_name ?? user.email ?? null,
       type: r.type,
       occurred_on: r.occurred_on,
