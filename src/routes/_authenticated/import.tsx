@@ -648,17 +648,38 @@ function HistoricalImport() {
 
       {rows.length > 0 && (
         <Card className="overflow-hidden">
-          <div className="p-4 flex items-center justify-between">
+          <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-accent" />
               <span className="font-medium">{rows.length} lançamentos pré-visualizados</span>
+              {selected.size > 0 && <span className="text-xs text-muted-foreground">· {selected.size} selecionado(s)</span>}
             </div>
-            <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
+            <div className="flex gap-2">
+              {selected.size > 0 && (
+                <Button variant="destructive" onClick={removeSelected} disabled={busy}>
+                  <Trash2 className="h-4 w-4 mr-1" /> Excluir selecionados
+                </Button>
+              )}
+              <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
+            </div>
           </div>
-          <div className="overflow-auto border-t max-h-[70vh]">
+          <div className="overflow-auto border-t max-h-[70vh] scroll-always">
             <table className="w-full text-sm">
-              <thead className="bg-white text-muted-foreground sticky top-0 z-20">
+              <thead className="bg-white text-muted-foreground sticky top-0 z-20 shadow-sm">
                 <tr>
+                  <th className="text-center p-2 w-10">
+                    <Checkbox
+                      checked={historicalFilteredRows.length > 0 && historicalFilteredRows.every(({ idx }) => selected.has(idx))}
+                      onCheckedChange={(v) => {
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          if (v) historicalFilteredRows.forEach(({ idx }) => n.add(idx));
+                          else historicalFilteredRows.forEach(({ idx }) => n.delete(idx));
+                          return n;
+                        });
+                      }}
+                    />
+                  </th>
                   <th className="text-left p-2">Data</th>
                   <th className="text-left p-2">Competência</th>
                   <th className="text-left p-2">Descrição</th>
@@ -669,13 +690,14 @@ function HistoricalImport() {
                   <th className="text-left p-2">Origem</th>
                   <th className="text-left p-2">Grupo</th>
                   <th className="text-center p-2">Compart.</th>
-                  <th className="text-left p-2">Usuário</th>
+                  <th className="text-left p-2">Responsável</th>
                   <th className="text-right p-2">Valor</th>
                   <th className="p-2"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-t bg-white sticky top-[41px] z-10">
+                  <td></td>
                   <td className="p-2"><Input type="date" value={filters.date} onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))} className="h-8 w-36" /></td>
                   <td className="p-2"><Input value={filters.competence} onChange={(e) => setFilters((f) => ({ ...f, competence: e.target.value }))} className="h-8 w-32" placeholder="Filtrar (:vazio)" /></td>
                   <td className="p-2"><Input value={filters.description} onChange={(e) => setFilters((f) => ({ ...f, description: e.target.value }))} className="h-8 min-w-44" placeholder="Filtrar (:vazio)" /></td>
@@ -695,6 +717,9 @@ function HistoricalImport() {
                   const subcategoryValue = subcategoryDrafts[idx] ?? selectedCat?.name ?? "";
                   return (
                     <tr key={idx} className="border-t align-top">
+                      <td className="p-2 text-center">
+                        <Checkbox checked={selected.has(idx)} onCheckedChange={(v) => setSelected((s) => { const n = new Set(s); if (v) n.add(idx); else n.delete(idx); return n; })} />
+                      </td>
                       <td className="p-2"><Input type="date" value={r.occurred_on} onChange={(e) => updateRow(idx, { occurred_on: e.target.value })} className="h-8 w-36" /></td>
                       <td className="p-2"><Input value={r.competence} onChange={(e) => updateRow(idx, { competence: normalizeCompetence(e.target.value) || r.competence })} className="h-8 w-32" placeholder="Mai/2026" /></td>
                       <td className="p-2"><Input value={r.description} onChange={(e) => updateRow(idx, { description: e.target.value })} className="h-8 min-w-44" /></td>
@@ -747,7 +772,22 @@ function HistoricalImport() {
                       <td className="p-2 text-center">
                         <Checkbox checked={!!r.is_shared} onCheckedChange={(v) => updateRow(idx, { is_shared: !!v })} />
                       </td>
-                      <td className="p-2"><Input value={r.attributed_to} onChange={(e) => updateRow(idx, { attributed_to: e.target.value })} placeholder="Nome" className="h-8 min-w-28" /></td>
+                      <td className="p-2">
+                        <Select
+                          value={r.attributed_to_user_id ?? "none"}
+                          onValueChange={(v) => {
+                            const id = v === "none" ? null : v;
+                            const p = allProfiles.find((pr) => pr.id === id);
+                            updateRow(idx, { attributed_to_user_id: id, attributed_to: p?.display_name || p?.email || "" });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-40"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sem responsável</SelectItem>
+                            {allProfiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.display_name || p.email || "Usuário"}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
                       <td className="p-2 w-32"><Input inputMode="decimal" value={String(r.amount)} onChange={(e) => updateRow(idx, { amount: parseFloat(e.target.value) || 0 })} className="h-8 text-right" /></td>
                       <td className="p-2 text-right">
                         <Button size="icon" variant="ghost" onClick={() => remove(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -758,6 +798,7 @@ function HistoricalImport() {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-muted/30">
+                  <td></td>
                   <td className="p-2 font-medium" colSpan={11}>Totais</td>
                   <td className="p-2 text-right font-medium">{fmtMoney(rows.reduce((a, b) => a + b.amount, 0))}</td>
                   <td></td>
