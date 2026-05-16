@@ -38,8 +38,8 @@ IMPORTANTE:
 }
 
 REGRAS:
-- "amount" SEMPRE positivo
-- "type" = "expense" para débitos/saídas
+- "amount" pode ser positivo OU negativo (preserve o sinal original do lançamento — estornos/devoluções podem aparecer negativos numa fatura de cartão, por exemplo)
+- "type" = "expense" para débitos/saídas (mesmo que o valor venha negativo)
 - "type" = "income" para créditos/entradas
 - "source" = banco/cartão/origem quando identificável, senão null
 - Ignore saldos, totais, resumos, limites e taxas
@@ -56,9 +56,13 @@ export const extractTransactionsFromText = createServerFn({
     }) => d,
   )
   .handler(async ({ data }) => {
-    // FIXO TEMPORARIAMENTE PARA TESTE
-    const baseUrl = "http://192.168.1.158:11434";
-    const model = "qwen2.5:3b";
+    // Endpoint da IA local (Ollama) configurável por env
+    // AI_BASE_URL aceita ".../v1" ou raiz; normalizamos para a raiz.
+    const rawBase =
+      process.env.AI_BASE_URL?.trim() ||
+      "http://192.168.1.158:11434/v1";
+    const baseUrl = rawBase.replace(/\/?v1\/?$/, "").replace(/\/+$/, "");
+    const model = process.env.AI_MODEL?.trim() || "qwen2.5:7b";
 
     const truncated = data.text.slice(0, 4000);
 

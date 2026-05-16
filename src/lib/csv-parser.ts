@@ -60,15 +60,15 @@ export function parseCsvText(
       if (Object.values(r).some(Boolean)) errors.push(`Linha ignorada: ${JSON.stringify(r)}`);
       continue;
     }
-    let type = defaultType;
-    if (amount < 0) type = "expense";
+    // Preserva o sinal original (permite valores negativos em ambos os tipos).
+    // O "type" segue o tipo padrão escolhido pelo usuário; o sinal vem do CSV.
     rows.push({
       occurred_on: date,
       description: String(descRaw).trim() || "Sem descrição",
       source: srcRaw?.toString().trim() || undefined,
-      amount: Math.abs(amount),
+      amount,
       competence: competenceFromDate(date),
-      type,
+      type: defaultType,
     });
   }
 
