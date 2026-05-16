@@ -579,6 +579,7 @@ function HistoricalImport() {
     setBusy(true);
     const payload = rows.map((r) => ({
       user_id: user.id,
+      attributed_to_user_id: r.attributed_to_user_id || user.id,
       type: r.type,
       occurred_on: r.occurred_on,
       competence: r.competence,
