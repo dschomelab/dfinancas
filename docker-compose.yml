@@ -4,10 +4,10 @@ services:
     container_name: dsccontas
     restart: unless-stopped
     ports:
-      - "3010:3000"
+      - "3010:3010"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
-      - AI_BASE_URL=http://192.168.1.158:11434
-      - AI_MODEL=qwen2.5:3b
-    volumes:
-      - ./.env:/app/.env:ro
+      - HOST=0.0.0.0
+      - PORT=3010

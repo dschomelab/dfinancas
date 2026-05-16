@@ -1,17 +1,27 @@
-FROM node:22-alpine
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
-
-RUN npm install
+RUN npm ci
 
 COPY . .
-
 RUN npm run build
 
-EXPOSE 3000
+FROM node:22-alpine AS runner
+
+WORKDIR /app
 
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3010
 
-CMD ["node", "dist/server/index.js"]
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/vite.config.ts ./vite.config.ts
+
+EXPOSE 3010
+
+CMD ["npm", "run", "preview"]

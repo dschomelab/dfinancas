@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && npm run postbuild",
     "build:dev": "vite build --mode development",
-    "preview": "vite preview",
+    "postbuild": "node -e \"const fs=require('node:fs');if(fs.existsSync('dist/server/index.js')){fs.copyFileSync('dist/server/index.js','dist/server/server.js');console.log('Created dist/server/server.js');}\"",
+    "preview": "vite preview --host 0.0.0.0 --port 3010 --strictPort",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
