@@ -419,6 +419,7 @@ type HistRow = {
   group_id: string | null;
   is_shared: boolean;
   attributed_to: string;
+  attributed_to_user_id: string | null;
   _error?: string;
 };
 
@@ -457,6 +458,7 @@ function HistoricalImport() {
   const [filters, setFilters] = useState({ date: "", competence: "", description: "", grouped: "", type: "all", category: "", subcategory: "", source: "", group: "", shared: "all" as "all" | "yes" | "no", user: "" });
   const [busy, setBusy] = useState(false);
   const [filename, setFilename] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const allCats = (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   const allGroups = groups.data ?? [];
@@ -534,6 +536,7 @@ function HistoricalImport() {
         const type = parseTipo(tipoRaw);
         const competence = compRaw ? normalizeCompetence(compRaw) || competenceFromDate(occurred_on) : competenceFromDate(occurred_on);
 
+        const profileId = findProfileId(userRaw);
         out.push({
           occurred_on,
           competence,
@@ -546,6 +549,7 @@ function HistoricalImport() {
           group_id: findGroupId(grpRaw),
           is_shared: parseBool(sharedRaw),
           attributed_to: (userRaw || "").trim(),
+          attributed_to_user_id: profileId,
         });
       }
       setRows(out);
@@ -559,7 +563,16 @@ function HistoricalImport() {
 
   const updateRow = (i: number, patch: Partial<HistRow>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch, ...(patch.type && patch.type !== r.type ? { category_id: null } : {}) } : r)));
-  const remove = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
+  const remove = (i: number) => {
+    setRows((rs) => rs.filter((_, idx) => idx !== i));
+    setSelected((s) => { const n = new Set<number>(); s.forEach((x) => { if (x < i) n.add(x); else if (x > i) n.add(x - 1); }); return n; });
+  };
+  const removeSelected = () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`Remover ${selected.size} linha(s) selecionada(s) da pré-visualização?`)) return;
+    setRows((rs) => rs.filter((_, idx) => !selected.has(idx)));
+    setSelected(new Set());
+  };
 
   const confirm = async () => {
     if (!user || rows.length === 0) return;
