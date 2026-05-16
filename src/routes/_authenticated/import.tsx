@@ -387,6 +387,7 @@ function MonthlyImport() {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-muted/30">
+                  <td></td>
                   <td className="p-2 font-medium" colSpan={7}>Totais</td>
                   <td className="p-2 text-right font-medium">{fmtMoney(rows.reduce((a, b) => a + b.amount, 0))}</td>
                   <td></td>
