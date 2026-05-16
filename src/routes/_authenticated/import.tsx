@@ -272,17 +272,38 @@ function MonthlyImport() {
 
       {rows.length > 0 && (
         <Card className="overflow-hidden">
-          <div className="p-4 flex items-center justify-between">
+          <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               {filename.toLowerCase().endsWith(".pdf") ? <Sparkles className="h-4 w-4 text-accent" /> : <FileText className="h-4 w-4 text-accent" />}
               <span className="font-medium">{rows.length} lançamentos pré-visualizados</span>
+              {selected.size > 0 && <span className="text-xs text-muted-foreground">· {selected.size} selecionado(s)</span>}
             </div>
-            <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
+            <div className="flex gap-2">
+              {selected.size > 0 && (
+                <Button variant="destructive" onClick={removeSelected} disabled={busy}>
+                  <Trash2 className="h-4 w-4 mr-1" /> Excluir selecionados
+                </Button>
+              )}
+              <Button onClick={confirm} disabled={busy}>{busy ? "Importando…" : "Confirmar importação"}</Button>
+            </div>
           </div>
-          <div className="overflow-auto border-t max-h-[70vh]">
+          <div className="overflow-auto border-t max-h-[70vh] scroll-always">
             <table className="w-full text-sm">
-              <thead className="bg-white text-muted-foreground sticky top-0 z-20">
+              <thead className="bg-white text-muted-foreground sticky top-0 z-20 shadow-sm">
                 <tr>
+                  <th className="text-center p-2 w-10">
+                    <Checkbox
+                      checked={monthlyFilteredRows.length > 0 && monthlyFilteredRows.every(({ idx }) => selected.has(idx))}
+                      onCheckedChange={(v) => {
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          if (v) monthlyFilteredRows.forEach(({ idx }) => n.add(idx));
+                          else monthlyFilteredRows.forEach(({ idx }) => n.delete(idx));
+                          return n;
+                        });
+                      }}
+                    />
+                  </th>
                   <th className="text-left p-2">Data</th>
                   <th className="text-left p-2">Descrição</th>
                   <th className="text-left p-2">Descrição agrupada</th>
@@ -296,6 +317,7 @@ function MonthlyImport() {
               </thead>
               <tbody>
                 <tr className="border-t bg-white sticky top-[41px] z-10">
+                  <td></td>
                   <td className="p-2"><Input type="date" value={filters.date} onChange={(e) => setFilters((f) => ({ ...f, date: e.target.value }))} className="h-8 w-36" /></td>
                   <td className="p-2"><Input value={filters.description} onChange={(e) => setFilters((f) => ({ ...f, description: e.target.value }))} className="h-8 min-w-48" placeholder="Filtrar (:vazio)" /></td>
                   <td className="p-2"><Input value={filters.grouped} onChange={(e) => setFilters((f) => ({ ...f, grouped: e.target.value }))} className="h-8 min-w-40" placeholder="Filtrar (:vazio)" /></td>
