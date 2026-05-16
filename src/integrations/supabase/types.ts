@@ -231,13 +231,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "transactions_attributed_to_user_id_fkey"
-            columns: ["attributed_to_user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
             isOneToOne: false
