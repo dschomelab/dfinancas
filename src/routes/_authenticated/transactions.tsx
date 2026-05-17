@@ -4,6 +4,7 @@ import { useTransactions, useCategories, useGroups, useProfiles, type Transactio
 import { fmtMoney, fmtDate, fmtCompetence } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -45,6 +46,12 @@ function TransactionsPage() {
   const profiles = useProfiles();
   const tx = useTransactions({ competences: selectedComps, type, categoryId: catFilter, groupId: groupFilter, shared: sharedFilter });
   const qc = useQueryClient();
+  const [colFilters, setColFilters] = useState({ description: "", grouped: "", category: "", subcategory: "", responsible: "", source: "" });
+  const matchCol = (value: string, f: string) => {
+    if (!f) return true;
+    if (f.trim().toLowerCase() === ":vazio") return !value.trim();
+    return value.toLowerCase().includes(f.toLowerCase());
+  };
 
   const sortedCats = useMemo(
     () => (cats.data ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
