@@ -193,6 +193,7 @@ function TransactionsPage() {
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="text-left p-3">Data</th>
+                <th className="text-left p-3">Competência</th>
                 <th className="text-center p-3 w-12">
                   <Checkbox checked={allInViewSelected} onCheckedChange={(v) => toggleSelectAllInView(!!v)} />
                 </th>
@@ -206,15 +207,41 @@ function TransactionsPage() {
                 <th className="text-right p-3">Valor</th>
                 <th className="p-3"></th>
               </tr>
+              <tr className="bg-background border-t">
+                <th></th>
+                <th></th>
+                <th></th>
+                <th className="p-2"><Input value={colFilters.description} onChange={(e) => setColFilters((f) => ({ ...f, description: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th className="p-2"><Input value={colFilters.grouped} onChange={(e) => setColFilters((f) => ({ ...f, grouped: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th className="p-2"><Input value={colFilters.category} onChange={(e) => setColFilters((f) => ({ ...f, category: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th className="p-2"><Input value={colFilters.subcategory} onChange={(e) => setColFilters((f) => ({ ...f, subcategory: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th className="p-2"><Input value={colFilters.responsible} onChange={(e) => setColFilters((f) => ({ ...f, responsible: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th className="p-2"><Input value={colFilters.source} onChange={(e) => setColFilters((f) => ({ ...f, source: e.target.value }))} placeholder="Filtrar (:vazio)" className="h-8" /></th>
+                <th></th><th></th><th></th>
+              </tr>
             </thead>
             <tbody>
-              {(tx.data ?? []).map((t) => {
+              {(tx.data ?? []).filter((t) => {
+                const cat = sortedCats.find((c) => c.id === t.category_id);
+                const parentCategory = cat?.parent ?? "";
+                const subCategory = cat?.parent ? cat.name : "";
+                const responsible = profiles.data?.find((p) => p.id === t.attributed_to_user_id)?.display_name
+                  || profiles.data?.find((p) => p.id === t.attributed_to_user_id)?.email
+                  || t.attributed_to || "";
+                return matchCol(t.description, colFilters.description)
+                  && matchCol(t.grouped_description ?? "", colFilters.grouped)
+                  && matchCol(parentCategory, colFilters.category)
+                  && matchCol(subCategory, colFilters.subcategory)
+                  && matchCol(responsible, colFilters.responsible)
+                  && matchCol(t.source ?? "", colFilters.source);
+              }).map((t) => {
                 const cat = sortedCats.find((c) => c.id === t.category_id);
                 const parentCategory = cat?.parent ?? "—";
                 const subCategory = cat?.parent ? cat.name : "—";
                 return (
                   <tr key={t.id} className="border-t hover:bg-muted/30">
                     <td className="p-3 whitespace-nowrap">{fmtDate(t.occurred_on)}</td>
+                    <td className="p-3 whitespace-nowrap capitalize">{fmtCompetence(t.competence)}</td>
                     <td className="p-3 text-center">
                       <Checkbox checked={selectedIds.includes(t.id)} onCheckedChange={(v) => toggleSelectRow(t.id, !!v)} />
                     </td>
@@ -252,7 +279,7 @@ function TransactionsPage() {
                 );
               })}
               {(tx.data ?? []).length === 0 && (
-                <tr><td colSpan={11} className="p-8 text-center text-muted-foreground">Nenhum lançamento neste filtro.</td></tr>
+                <tr><td colSpan={12} className="p-8 text-center text-muted-foreground">Nenhum lançamento neste filtro.</td></tr>
               )}
             </tbody>
           </table>
