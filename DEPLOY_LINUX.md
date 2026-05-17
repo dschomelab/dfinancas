@@ -58,6 +58,12 @@ Edite o `.env` com os valores reais, principalmente:
 docker compose up -d --build
 ```
 
+> Importante: o app é um TanStack Start compilado para **Cloudflare Worker**.
+> O container faz `npm run build` e em seguida serve o worker resultante
+> (`dist/server/`) usando `wrangler dev` (workerd) na porta 3010. Não use
+> `vite preview` — ele não executa SSR nem server functions e o login/IA
+> ficariam quebrados.
+
 ## 4) Verificar saúde da aplicação
 
 ```bash
