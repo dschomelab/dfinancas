@@ -39,8 +39,18 @@ export type DeterministicResult = {
 
 // ---------- helpers ----------
 
-const MONEY_RE = /(-?\s*R?\$?\s*-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+// Aceita "R$ 1.234,56", "-R$ 1.234,56", "−R$ 1.234,56" (minus unicode), "(R$ 1,00)"
+const MONEY_RE = /([\u2212-]?\s*R?\$?\s*[\u2212-]?\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
 const DATE_DDMM = /^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?\s+(.*)$/;
+
+// Formato Nubank: "28 MAR" (DD MES_PT) opcionalmente seguido de cartão "•••• 7458"
+const MONTHS_PT: Record<string, number> = {
+  JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6,
+  JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12,
+};
+const DATE_DDMES =
+  /^(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)(?:\s+\d{4})?\s+(.*)$/i;
+const CARD_MASK = /^(?:[•·●\u2022\u00b7*]{2,}\s*\d{3,4}|x{2,}\s*\d{3,4})\s+/i;
 
 // Termos típicos de cabeçalho / sumário a ignorar (não são lançamentos):
 const SKIP_PATTERNS: RegExp[] = [
