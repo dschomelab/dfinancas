@@ -13,7 +13,8 @@ import { useAuth } from "@/lib/auth-context";
 import { useServerFn } from "@tanstack/react-start";
 import { extractTransactionsFromText } from "@/lib/ai-import.functions";
 import { parseCsvText, inferSourceFromFilename, type ParsedRow } from "@/lib/csv-parser";
-import { extractPdfText } from "@/lib/pdf-extract";
+import { extractPdf } from "@/lib/pdf-extract";
+import { parsePdfDeterministic } from "@/lib/pdf-parser";
 import { competenceFromDate, fmtDate, fmtMoney, parseAmount, parseDateLoose, normalizeCompetence } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -116,22 +117,77 @@ function MonthlyImport() {
         toast.success(`${parsed.rows.length} lançamentos lidos do CSV`);
         if (parsed.errors.length) console.warn(parsed.errors);
       } else if (file.name.toLowerCase().endsWith(".pdf")) {
-        toast.info("Lendo PDF e extraindo com IA…");
-        const text = await extractPdfText(file);
-        const result = await aiExtract({ data: { text, defaultType, hint: source || inferred } });
-        const mapped: MonthlyRow[] = (result.rows ?? []).map((r) => applySuggestions({
-          occurred_on: r.occurred_on,
-          description: r.description,
-          source: r.source ?? source ?? inferred,
-          amount: Number(r.amount),
-          competence,
-          type: r.type,
-          category_id: null,
-          grouped_description: "",
-          is_shared: false,
-        }));
-        setRows(mapped);
-        toast.success(`${mapped.length} lançamentos extraídos pela IA`);
+        toast.info("Lendo PDF…");
+        const pdf = await extractPdf(file);
+        console.log("[pdf-import] páginas:", pdf.pages, "itens:", pdf.textItems, "linhas:", pdf.lines.length, "escaneado?", pdf.isScanned);
+
+        // 1) Escaneado → IA direto (sem parser determinístico)
+        if (pdf.isScanned) {
+          toast.info("PDF parece ser escaneado — usando IA como fallback…");
+          const result = await aiExtract({ data: { text: pdf.text, defaultType, hint: source || inferred } });
+          const mapped: MonthlyRow[] = (result.rows ?? []).map((r) => applySuggestions({
+            occurred_on: r.occurred_on,
+            description: r.description,
+            source: r.source ?? source ?? inferred,
+            amount: Number(r.amount),
+            competence,
+            type: r.type,
+            category_id: null,
+            grouped_description: "",
+            is_shared: false,
+          }));
+          setRows(mapped);
+          toast.success(`${mapped.length} lançamentos extraídos pela IA (PDF escaneado)`);
+        } else {
+          // 2) PDF digital → parser determinístico
+          const det = parsePdfDeterministic(pdf.lines, defaultType, source || inferred);
+          console.log("[pdf-import] parser:", det.parser, "confiança:", det.confidence.toFixed(2), "linhas candidatas:", det.candidateLines, "aceitas:", det.acceptedLines, "ref:", `${det.refMonth}/${det.refYear}`);
+          if (det.rejectedSamples.length) console.log("[pdf-import] linhas rejeitadas (amostra):", det.rejectedSamples);
+
+          // Heurística de aceitação:
+          //  - confiança ≥ 0.6 e ≥ 3 linhas → aceita determinístico
+          //  - confiança 0.3–0.6 → aceita mas alerta (revisão)
+          //  - confiança < 0.3 ou 0 linhas → fallback IA
+          const HIGH = 0.6;
+          const LOW = 0.3;
+          const useDeterministic = det.acceptedLines >= 3 && det.confidence >= LOW;
+
+          if (useDeterministic) {
+            const mapped: MonthlyRow[] = det.rows.map((r) => applySuggestions({
+              occurred_on: r.occurred_on,
+              description: r.installment ? `${r.description} ${r.installment}` : r.description,
+              source: r.source ?? source ?? inferred,
+              amount: r.amount,
+              competence,
+              type: r.type,
+              category_id: null,
+              grouped_description: r.installment ? r.description : "",
+              is_shared: false,
+            }));
+            setRows(mapped);
+            if (det.confidence >= HIGH) {
+              toast.success(`${mapped.length} lançamentos extraídos (parser ${det.parser}, confiança ${(det.confidence * 100).toFixed(0)}%)`);
+            } else {
+              toast.warning(`${mapped.length} lançamentos extraídos com confiança média (${(det.confidence * 100).toFixed(0)}%). Revise antes de confirmar.`);
+            }
+          } else {
+            toast.info(`Parser determinístico inseguro (confiança ${(det.confidence * 100).toFixed(0)}%) — acionando IA como fallback…`);
+            const result = await aiExtract({ data: { text: pdf.text, defaultType, hint: source || inferred } });
+            const mapped: MonthlyRow[] = (result.rows ?? []).map((r) => applySuggestions({
+              occurred_on: r.occurred_on,
+              description: r.description,
+              source: r.source ?? source ?? inferred,
+              amount: Number(r.amount),
+              competence,
+              type: r.type,
+              category_id: null,
+              grouped_description: "",
+              is_shared: false,
+            }));
+            setRows(mapped);
+            toast.success(`${mapped.length} lançamentos extraídos pela IA (fallback)`);
+          }
+        }
       } else {
         toast.error("Formato não suportado. Use CSV ou PDF.");
       }
