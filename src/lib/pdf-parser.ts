@@ -212,7 +212,7 @@ export function parsePdfDeterministic(
       if (rejected.length < 10) rejected.push(line);
       continue;
     }
-    const moneyRaw = moneyMatch[1];
+    const moneyRaw = moneyMatch[1].replace(/\u2212/g, "-"); // minus unicode → ASCII
     const amount = parseAmount(moneyRaw);
     if (amount === null) {
       if (rejected.length < 10) rejected.push(line);
