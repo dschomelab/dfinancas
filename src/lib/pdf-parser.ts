@@ -39,8 +39,18 @@ export type DeterministicResult = {
 
 // ---------- helpers ----------
 
-const MONEY_RE = /(-?\s*R?\$?\s*-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+// Aceita "R$ 1.234,56", "-R$ 1.234,56", "−R$ 1.234,56" (minus unicode), "(R$ 1,00)"
+const MONEY_RE = /([\u2212-]?\s*R?\$?\s*[\u2212-]?\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
 const DATE_DDMM = /^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?\s+(.*)$/;
+
+// Formato Nubank: "28 MAR" (DD MES_PT) opcionalmente seguido de cartão "•••• 7458"
+const MONTHS_PT: Record<string, number> = {
+  JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6,
+  JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12,
+};
+const DATE_DDMES =
+  /^(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)(?:\s+\d{4})?\s+(.*)$/i;
+const CARD_MASK = /^(?:[•·●\u2022\u00b7*]{2,}\s*\d{3,4}|x{2,}\s*\d{3,4})\s+/i;
 
 // Termos típicos de cabeçalho / sumário a ignorar (não são lançamentos):
 const SKIP_PATTERNS: RegExp[] = [
@@ -101,6 +111,23 @@ function detectRefDate(text: string): { year: number; month: number } {
     if (found) break;
   }
 
+  // Fallback: formato Nubank "DD MES AAAA" (ex.: "04 MAI 2026", "FATURA 04 MAI 2026")
+  if (!found) {
+    const re = /(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const mm = MONTHS_PT[m[2].toUpperCase()];
+      const yy = parseInt(m[3], 10);
+      if (yy >= 2000 && yy <= 2100 && mm) {
+        if (!found || yy > bestYear || (yy === bestYear && mm > bestMonth)) {
+          bestYear = yy;
+          bestMonth = mm;
+          found = true;
+        }
+      }
+    }
+  }
+
   return { year: bestYear, month: bestMonth };
 }
 
@@ -150,20 +177,34 @@ export function parsePdfDeterministic(
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line) continue;
 
-    // candidato = começa com DD/MM
-    const dateMatch = line.match(DATE_DDMM);
-    if (!dateMatch) continue;
+    // candidato = começa com DD/MM ou "DD MES" (Nubank)
+    let dd: number, mm: number;
+    let explicitYear: string | undefined;
+    let rest: string;
+    const m1 = line.match(DATE_DDMM);
+    const m2 = !m1 ? line.match(DATE_DDMES) : null;
+    if (m1) {
+      dd = parseInt(m1[1], 10);
+      mm = parseInt(m1[2], 10);
+      explicitYear = m1[3];
+      rest = m1[4];
+    } else if (m2) {
+      dd = parseInt(m2[1], 10);
+      mm = MONTHS_PT[m2[2].toUpperCase()];
+      rest = m2[3];
+    } else {
+      continue;
+    }
     candidates++;
-
-    const dd = parseInt(dateMatch[1], 10);
-    const mm = parseInt(dateMatch[2], 10);
-    const explicitYear = dateMatch[3];
-    const rest = dateMatch[4];
 
     if (dd < 1 || dd > 31 || mm < 1 || mm > 12) {
       rejected.push(line);
       continue;
     }
+
+    // Remove prefixo de máscara de cartão "•••• 7458 " (Nubank)
+    rest = rest.replace(CARD_MASK, "").trim();
+
 
     // valor no final da linha
     const moneyMatch = rest.match(MONEY_RE);
@@ -171,7 +212,7 @@ export function parsePdfDeterministic(
       if (rejected.length < 10) rejected.push(line);
       continue;
     }
-    const moneyRaw = moneyMatch[1];
+    const moneyRaw = moneyMatch[1].replace(/\u2212/g, "-"); // minus unicode → ASCII
     const amount = parseAmount(moneyRaw);
     if (amount === null) {
       if (rejected.length < 10) rejected.push(line);
