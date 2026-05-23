@@ -111,6 +111,23 @@ function detectRefDate(text: string): { year: number; month: number } {
     if (found) break;
   }
 
+  // Fallback: formato Nubank "DD MES AAAA" (ex.: "04 MAI 2026", "FATURA 04 MAI 2026")
+  if (!found) {
+    const re = /(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(\d{4})/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const mm = MONTHS_PT[m[2].toUpperCase()];
+      const yy = parseInt(m[3], 10);
+      if (yy >= 2000 && yy <= 2100 && mm) {
+        if (!found || yy > bestYear || (yy === bestYear && mm > bestMonth)) {
+          bestYear = yy;
+          bestMonth = mm;
+          found = true;
+        }
+      }
+    }
+  }
+
   return { year: bestYear, month: bestMonth };
 }
 
