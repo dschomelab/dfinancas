@@ -160,20 +160,34 @@ export function parsePdfDeterministic(
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line) continue;
 
-    // candidato = começa com DD/MM
-    const dateMatch = line.match(DATE_DDMM);
-    if (!dateMatch) continue;
+    // candidato = começa com DD/MM ou "DD MES" (Nubank)
+    let dd: number, mm: number;
+    let explicitYear: string | undefined;
+    let rest: string;
+    const m1 = line.match(DATE_DDMM);
+    const m2 = !m1 ? line.match(DATE_DDMES) : null;
+    if (m1) {
+      dd = parseInt(m1[1], 10);
+      mm = parseInt(m1[2], 10);
+      explicitYear = m1[3];
+      rest = m1[4];
+    } else if (m2) {
+      dd = parseInt(m2[1], 10);
+      mm = MONTHS_PT[m2[2].toUpperCase()];
+      rest = m2[3];
+    } else {
+      continue;
+    }
     candidates++;
-
-    const dd = parseInt(dateMatch[1], 10);
-    const mm = parseInt(dateMatch[2], 10);
-    const explicitYear = dateMatch[3];
-    const rest = dateMatch[4];
 
     if (dd < 1 || dd > 31 || mm < 1 || mm > 12) {
       rejected.push(line);
       continue;
     }
+
+    // Remove prefixo de máscara de cartão "•••• 7458 " (Nubank)
+    rest = rest.replace(CARD_MASK, "").trim();
+
 
     // valor no final da linha
     const moneyMatch = rest.match(MONEY_RE);
